@@ -1178,13 +1178,38 @@
     height: 100dvh !important; /* Dynamic Viewport Height for Mobile Browsers */
     z-index: 99999 !important;
     background: var(--bg, #f7f4ed) !important;
-    padding: 1.5rem 1.2rem 7rem 1.2rem !important; /* 7rem bottom padding so bottom bar never obscures controls */
+    padding: 1.2rem 1.2rem 4rem 1.2rem !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
     border-radius: 0 !important;
     margin: 0 !important;
     border: none !important;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3) !important;
+    gap: 0.8rem !important;
+  }
+
+  /* Prevent control groups from expanding vertically on mobile */
+  .anr-controls.is-mobile-open .anr-control-group,
+  .anr-controls.is-mobile-open .anr-control-group-wide {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    gap: 4px !important;
+  }
+
+  .anr-controls.is-mobile-open .anr-toggle-btn,
+  .anr-controls.is-mobile-open .anr-select,
+  .anr-controls.is-mobile-open .anr-slider {
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .anr-controls.is-mobile-open .anr-control-label {
+    font-size: 0.82em !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    margin-bottom: 2px !important;
   }
 
   .anr-controls-header-mobile {
@@ -1192,8 +1217,8 @@
     align-items: center !important;
     justify-content: space-between !important;
     width: 100% !important;
-    padding-bottom: 1rem !important;
-    margin-bottom: 1.2rem !important;
+    padding-bottom: 0.8rem !important;
+    margin-bottom: 0.6rem !important;
     border-bottom: 2px solid var(--border) !important;
   }
 
