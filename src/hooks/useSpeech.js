@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import splitWords from "../utils/splitWords";
 
 const BCP47_MAP = {
   en: "en-US",
@@ -7,129 +6,24 @@ const BCP47_MAP = {
   mr: "mr-IN",
 };
 
-// Wraps the Web Speech API with:
-//  - a queue of one utterance at a time, tracked by an arbitrary "id"
-//  - live word-boundary tracking (via utterance's boundary event)
-//  - fallback estimated word-by-word highlighter when boundary events aren't emitted (e.g. Hindi/Marathi)
-//  - Chrome 15s audio timeout keep-alive pinging
-//  - debounced (300ms) & queue-flushed (polling) rate changes
-//  - voice & language selection with language-based voice filtering and fallback notices
-export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' } = {}) {
+// Clean, stable SpeechSynthesis hook that eliminates audio stuttering/popping across all speech speeds
+export default function useSpeech({ rate = 1, voiceURI = null, language = "en" } = {}) {
   const isSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
-  // React state for UI rendering
   const [speakingId, setSpeakingId] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [wordRange, setWordRange] = useState(null);
-  const [isEstimatedHighlight, setIsEstimatedHighlight] = useState(false);
   const [voices, setVoices] = useState([]);
-  const [voiceError] = useState(null);
 
-  // Stable refs for values read inside effects without causing re-trigger loops
-  const speakingIdRef = useRef(speakingId);
-  const activeTextRef = useRef(null);
-  const rateRef = useRef(rate);
-  const prevRateRef = useRef(rate);
-  const voiceURIRef = useRef(voiceURI);
-  const languageRef = useRef(language);
-  const isPausedRef = useRef(isPaused);
+  const speakingIdRef = useRef(null);
+  const isPausedRef = useRef(false);
 
-  const restartTimerRef = useRef(null);
-  const cancelPollRef = useRef(null);
-  const keepAliveIntervalRef = useRef(null);
-  const hasRealBoundaryRef = useRef(false);
-  const fallbackCheckTimerRef = useRef(null);
-  const estimateTimerRef = useRef(null);
-  const speakInternalRef = useRef(null);
-
-  // Keep refs in sync with props & state
-  useEffect(() => {
-    speakingIdRef.current = speakingId;
-    rateRef.current = rate;
-    voiceURIRef.current = voiceURI;
-    languageRef.current = language;
-    isPausedRef.current = isPaused;
-  }, [speakingId, rate, voiceURI, language, isPaused]);
-
-  /* ==========================================================================
-     CHROME 15-SECOND SPEECH TIMEOUT KEEP-ALIVE WORKAROUND
-     ========================================================================== */
-  const stopKeepAlive = useCallback(() => {
-    if (keepAliveIntervalRef.current) {
-      clearInterval(keepAliveIntervalRef.current);
-      keepAliveIntervalRef.current = null;
-    }
-  }, []);
-
-  const startKeepAlive = useCallback(() => {
-    stopKeepAlive();
-    // Chrome stops feeding audio after ~15s on long utterances unless
-    // nudged with a pause/resume cycle. This is a platform bug workaround,
-    // not related to rate or language — it affects every utterance equally.
-    keepAliveIntervalRef.current = setInterval(() => {
-      if (window.speechSynthesis && window.speechSynthesis.speaking && !isPausedRef.current) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.resume();
-      }
-    }, 10000);
-  }, [stopKeepAlive]);
-
-  /* ==========================================================================
-     COSMETIC HIGHLIGHTING LOGIC (Pure visual state, zero audio interaction)
-     ========================================================================== */
-
-  // Clear all estimation & fallback timers
-  const clearHighlightTimers = useCallback(() => {
-    if (fallbackCheckTimerRef.current) {
-      clearTimeout(fallbackCheckTimerRef.current);
-      fallbackCheckTimerRef.current = null;
-    }
-    if (estimateTimerRef.current) {
-      clearTimeout(estimateTimerRef.current);
-      estimateTimerRef.current = null;
-    }
-  }, []);
-
-  // Start simulated estimated highlighting when native boundary events do not fire
-  const startEstimatedHighlighting = useCallback((text, currentRate) => {
-    clearHighlightTimers();
-
-    const tokens = splitWords(text);
-    if (tokens.length === 0) return;
-
-    let index = 0;
-
-    function highlightNext() {
-      if (index >= tokens.length || !speakingIdRef.current) {
-        return;
-      }
-
-      const token = tokens[index];
-      setWordRange({ start: token.start, end: token.end });
-
-      // Base ~65ms per character, scaled for speech rate
-      const baseDuration = Math.max(150, Math.min(800, token.word.length * 65));
-      const effectiveDuration = baseDuration / (currentRate || 1.0);
-
-      index++;
-      estimateTimerRef.current = setTimeout(highlightNext, effectiveDuration);
-    }
-
-    highlightNext();
-  }, [clearHighlightTimers]);
-
-  /* ==========================================================================
-     AUDIO CONTROL LOGIC (Interacts with window.speechSynthesis)
-     ========================================================================== */
-
-  // Voice lists load asynchronously in most browsers
+  // ---- Voice list (loads asynchronously in most browsers) ----
   useEffect(() => {
     if (!isSupported) return;
-
     function loadVoices() {
       setVoices(window.speechSynthesis.getVoices());
     }
-
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
     return () => {
@@ -137,290 +31,136 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     };
   }, [isSupported]);
 
-  // Filter voices that match the currently selected language
+  // Voices matching the currently selected language, with Marathi->Hindi fallback
   const filteredVoices = useMemo(() => {
-    if (!voices || voices.length === 0) return [];
-
-    const currentLang = (language || 'en').toLowerCase();
-    let matching = voices.filter((v) =>
-      v.lang.toLowerCase().replace("_", "-").startsWith(currentLang)
-    );
-
-    if (matching.length === 0 && currentLang === 'mr') {
-      matching = voices.filter((v) =>
-        v.lang.toLowerCase().replace("_", "-").startsWith('hi')
-      );
+    if (!voices.length) return [];
+    const lang = (language || "en").toLowerCase();
+    let matches = voices.filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith(lang));
+    if (matches.length === 0 && lang === "mr") {
+      matches = voices.filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith("hi"));
     }
-
-    return matching;
+    return matches;
   }, [voices, language]);
 
-  // Provide a calm, informative notice if no native voice exists on the current device
   const voiceWarning = useMemo(() => {
     if (!isSupported || voices.length === 0) return null;
-
-    const currentLang = (language || 'en').toLowerCase();
-    const exactMatches = voices.filter((v) =>
-      v.lang.toLowerCase().replace("_", "-").startsWith(currentLang)
-    );
-
-    if (currentLang === 'hi' && exactMatches.length === 0) {
-      return "No native Hindi voice found on this device — using nearest voice fallback. For native pronunciation, try Chrome on Android or Desktop.";
+    const lang = (language || "en").toLowerCase();
+    if (lang === "en") return null;
+    const exact = voices.filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith(lang));
+    if (exact.length > 0) return null;
+    if (lang === "mr") {
+      const hindiFallback = voices.some((v) => v.lang.toLowerCase().replace("_", "-").startsWith("hi"));
+      return hindiFallback
+        ? "No native Marathi voice found on this device — using Hindi voice as the closest fallback."
+        : "No native Marathi voice found on this device — using the system default voice.";
     }
-
-    if (currentLang === 'mr' && exactMatches.length === 0) {
-      const hindiMatches = voices.filter((v) =>
-        v.lang.toLowerCase().replace("_", "-").startsWith('hi')
-      );
-      if (hindiMatches.length > 0) {
-        return "No native Marathi voice found on this device — using Hindi voice as closest fallback.";
-      }
-      return "No native Marathi voice found on this device — using nearest voice fallback. For native pronunciation, try Chrome on Android or Desktop.";
-    }
-
-    return null;
+    return "No native Hindi voice found on this device — using the system default voice.";
   }, [isSupported, voices, language]);
 
-  // Clean up pending timers and active speech on unmount
+  // ---- Cleanup on unmount ----
   useEffect(() => {
     return () => {
-      clearHighlightTimers();
-      stopKeepAlive();
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      if (cancelPollRef.current) clearInterval(cancelPollRef.current);
       if (isSupported) window.speechSynthesis.cancel();
     };
-  }, [isSupported, clearHighlightTimers, stopKeepAlive]);
+  }, [isSupported]);
 
-  // Safely cancels speech and waits for the browser queue to actually empty (max 500ms)
-  const cancelAndDrainQueue = useCallback((callback) => {
-    if (!isSupported) {
-      if (callback) callback();
-      return;
-    }
-
-    stopKeepAlive();
-    if (cancelPollRef.current) clearInterval(cancelPollRef.current);
-
-    window.speechSynthesis.cancel();
-
-    let elapsed = 0;
-    const interval = 50;
-    const maxWait = 500;
-
-    cancelPollRef.current = setInterval(() => {
-      elapsed += interval;
-      const isSpeaking = window.speechSynthesis.speaking;
-
-      if (!isSpeaking || elapsed >= maxWait) {
-        clearInterval(cancelPollRef.current);
-        cancelPollRef.current = null;
-        if (callback) callback();
-      }
-    }, interval);
-  }, [isSupported, stopKeepAlive]);
-
-  // Full stop function
   const stop = useCallback(() => {
-    clearHighlightTimers();
-    stopKeepAlive();
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
-    if (cancelPollRef.current) {
-      clearInterval(cancelPollRef.current);
-      cancelPollRef.current = null;
-    }
-
-    if (isSupported) {
-      window.speechSynthesis.cancel();
-    }
+    if (isSupported) window.speechSynthesis.cancel();
     setSpeakingId(null);
     setIsPaused(false);
     setWordRange(null);
-    setIsEstimatedHighlight(false);
     speakingIdRef.current = null;
-    activeTextRef.current = null;
-    hasRealBoundaryRef.current = false;
-  }, [isSupported, clearHighlightTimers, stopKeepAlive]);
+    isPausedRef.current = false;
+  }, [isSupported]);
 
-  // Internal helper to construct and start a SpeechSynthesisUtterance
-  const speakInternal = useCallback((id, text) => {
-    if (!isSupported || !text) return;
+  const speak = useCallback(
+    (id, text) => {
+      if (!isSupported || !text) return;
 
-    clearHighlightTimers();
-    stopKeepAlive();
-
-    setSpeakingId(id);
-    setIsPaused(false);
-    setWordRange(null);
-    setIsEstimatedHighlight(false);
-    speakingIdRef.current = id;
-    activeTextRef.current = text;
-    hasRealBoundaryRef.current = false;
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    const parsedRate = Math.max(0.5, Math.min(2.0, Number(rateRef.current) || 1.0));
-    utterance.rate = parsedRate;
-
-    // Explicitly set exact BCP-47 locale code (hi-IN, mr-IN, en-US)
-    const targetBCP47 = BCP47_MAP[languageRef.current] || languageRef.current || 'en-US';
-    utterance.lang = targetBCP47;
-
-    let selectedVoice = null;
-    const allVoices = window.speechSynthesis.getVoices();
-
-    if (voiceURIRef.current) {
-      selectedVoice = allVoices.find((v) => v.voiceURI === voiceURIRef.current);
-    }
-
-    if (!selectedVoice) {
-      const langPrefix = (languageRef.current || 'en').toLowerCase();
-      selectedVoice = allVoices.find(v => v.lang.toLowerCase().replace("_", "-").startsWith(langPrefix));
-
-      if (!selectedVoice && langPrefix === 'mr') {
-        selectedVoice = allVoices.find(v => v.lang.toLowerCase().replace("_", "-").startsWith('hi'));
+      // Clicking the article that's already speaking stops it.
+      if (speakingIdRef.current === id) {
+        stop();
+        return;
       }
 
-      if (!selectedVoice) {
-        selectedVoice = allVoices.find(v => v.default) || allVoices[0];
+      // Fully cancel anything else first, then start clean.
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Clean rate parsing between 0.5x and 2.0x
+      const safeRate = Math.max(0.5, Math.min(2.0, Number(rate) || 1));
+      utterance.rate = safeRate;
+      utterance.lang = BCP47_MAP[language] || "en-US";
+
+      const allVoices = window.speechSynthesis.getVoices();
+      let selected = voiceURI ? allVoices.find((v) => v.voiceURI === voiceURI) : null;
+      if (!selected) {
+        const lang = (language || "en").toLowerCase();
+        selected = allVoices.find((v) => v.lang.toLowerCase().replace("_", "-").startsWith(lang));
+        if (!selected && lang === "mr") {
+          selected = allVoices.find((v) => v.lang.toLowerCase().replace("_", "-").startsWith("hi"));
+        }
+        if (!selected) selected = allVoices.find((v) => v.default) || allVoices[0];
       }
-    }
+      if (selected) utterance.voice = selected;
 
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
+      utterance.onboundary = (event) => {
+        if (event && typeof event.charIndex === "number") {
+          setWordRange({ start: event.charIndex, end: event.charIndex + (event.charLength || 1) });
+        }
+      };
 
-    // 400ms check: If no native boundary event fires within 400ms, enable estimated mode ONCE
-    fallbackCheckTimerRef.current = setTimeout(() => {
-      if (!hasRealBoundaryRef.current && speakingIdRef.current === id) {
-        setIsEstimatedHighlight(true);
-        startEstimatedHighlighting(text, rateRef.current);
-      }
-    }, 400);
-
-    utterance.onboundary = (event) => {
-      hasRealBoundaryRef.current = true;
-      clearHighlightTimers();
-      setIsEstimatedHighlight(false);
-
-      if (event && typeof event.charIndex === "number") {
-        setWordRange({
-          start: event.charIndex,
-          end: event.charIndex + (event.charLength || 1),
-        });
-      }
-    };
-
-    utterance.onend = () => {
-      clearHighlightTimers();
-      stopKeepAlive();
-      setSpeakingId(null);
-      setIsPaused(false);
-      setWordRange(null);
-      setIsEstimatedHighlight(false);
-      speakingIdRef.current = null;
-      activeTextRef.current = null;
-      hasRealBoundaryRef.current = false;
-    };
-
-    utterance.onerror = (e) => {
-      if (e && e.error !== "canceled" && e.error !== "interrupted") {
-        clearHighlightTimers();
-        stopKeepAlive();
+      utterance.onend = () => {
         setSpeakingId(null);
         setIsPaused(false);
         setWordRange(null);
-        setIsEstimatedHighlight(false);
         speakingIdRef.current = null;
-        activeTextRef.current = null;
-        hasRealBoundaryRef.current = false;
-      }
-    };
+        isPausedRef.current = false;
+      };
 
-    startKeepAlive();
-    window.speechSynthesis.resume();
-    window.speechSynthesis.speak(utterance);
-  }, [isSupported, clearHighlightTimers, startEstimatedHighlighting, startKeepAlive, stopKeepAlive]);
-
-  // Save ref to speakInternal for rate restart effect
-  useEffect(() => {
-    speakInternalRef.current = speakInternal;
-  }, [speakInternal]);
-
-  // Main speak function called when user taps Listen on an article
-  const speak = useCallback((id, text) => {
-    if (!isSupported) return;
-
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
-
-    // Clicking the article that's already speaking stops it instead of restarting
-    if (speakingIdRef.current === id) {
-      stop();
-      return;
-    }
-
-    cancelAndDrainQueue(() => {
-      speakInternal(id, text);
-    });
-  }, [isSupported, stop, cancelAndDrainQueue, speakInternal]);
-
-  // Rate-change restart effect: strictly watches ONLY user changes to `rate`
-  useEffect(() => {
-    // If rate value hasn't actually changed, return immediately without touching audio
-    if (prevRateRef.current === rate) {
-      return;
-    }
-
-    prevRateRef.current = rate;
-
-    // Only restart speech if an article is actively playing and not paused
-    if (isSupported && speakingIdRef.current !== null && activeTextRef.current && !isPausedRef.current) {
-      if (restartTimerRef.current) {
-        clearTimeout(restartTimerRef.current);
-      }
-
-      restartTimerRef.current = setTimeout(() => {
-        const currentId = speakingIdRef.current;
-        const currentText = activeTextRef.current;
-
-        if (currentId && currentText && speakInternalRef.current) {
-          cancelAndDrainQueue(() => {
-            speakInternalRef.current(currentId, currentText);
-          });
+      utterance.onerror = (e) => {
+        if (e && e.error !== "canceled" && e.error !== "interrupted") {
+          setSpeakingId(null);
+          setIsPaused(false);
+          setWordRange(null);
+          speakingIdRef.current = null;
+          isPausedRef.current = false;
         }
-      }, 300);
-    }
-  }, [rate, isSupported, cancelAndDrainQueue]);
+      };
+
+      setSpeakingId(id);
+      setIsPaused(false);
+      setWordRange(null);
+      speakingIdRef.current = id;
+      isPausedRef.current = false;
+
+      window.speechSynthesis.speak(utterance);
+    },
+    [isSupported, rate, voiceURI, language, stop]
+  );
 
   const togglePause = useCallback(() => {
-    if (!speakingId || !isSupported) return;
-
-    if (isPaused) {
+    if (!speakingIdRef.current || !isSupported) return;
+    if (isPausedRef.current) {
       window.speechSynthesis.resume();
+      isPausedRef.current = false;
       setIsPaused(false);
-      startKeepAlive();
     } else {
-      stopKeepAlive();
       window.speechSynthesis.pause();
+      isPausedRef.current = true;
       setIsPaused(true);
     }
-  }, [isSupported, speakingId, isPaused, startKeepAlive, stopKeepAlive]);
+  }, [isSupported]);
 
   return {
     isSupported,
     speakingId,
     isPaused,
     wordRange,
-    isEstimatedHighlight,
     voices,
     filteredVoices,
     voiceWarning,
-    voiceError,
     speak,
     toggleSpeak: speak,
     stop,
