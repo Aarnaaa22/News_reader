@@ -11,6 +11,7 @@ const BCP47_MAP = {
 //  - a queue of one utterance at a time, tracked by an arbitrary "id"
 //  - live word-boundary tracking (via utterance's boundary event)
 //  - fallback estimated word-by-word highlighter when boundary events aren't emitted (e.g. Hindi/Marathi)
+//  - Chrome 15s audio timeout keep-alive pinging
 //  - debounced (300ms) & queue-flushed (polling) rate changes
 //  - voice & language selection with language-based voice filtering and fallback notices
 export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' } = {}) {
@@ -35,6 +36,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
 
   const restartTimerRef = useRef(null);
   const cancelPollRef = useRef(null);
+  const keepAliveIntervalRef = useRef(null);
   const hasRealBoundaryRef = useRef(false);
   const fallbackCheckTimerRef = useRef(null);
   const estimateTimerRef = useRef(null);
@@ -48,6 +50,29 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     languageRef.current = language;
     isPausedRef.current = isPaused;
   }, [speakingId, rate, voiceURI, language, isPaused]);
+
+  /* ==========================================================================
+     CHROME 15-SECOND SPEECH TIMEOUT KEEP-ALIVE WORKAROUND
+     ========================================================================== */
+  const stopKeepAlive = useCallback(() => {
+    if (keepAliveIntervalRef.current) {
+      clearInterval(keepAliveIntervalRef.current);
+      keepAliveIntervalRef.current = null;
+    }
+  }, []);
+
+  const startKeepAlive = useCallback(() => {
+    stopKeepAlive();
+    // Chrome stops feeding audio after ~15s on long utterances unless
+    // nudged with a pause/resume cycle. This is a platform bug workaround,
+    // not related to rate or language — it affects every utterance equally.
+    keepAliveIntervalRef.current = setInterval(() => {
+      if (window.speechSynthesis && window.speechSynthesis.speaking && !isPausedRef.current) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      }
+    }, 10000);
+  }, [stopKeepAlive]);
 
   /* ==========================================================================
      COSMETIC HIGHLIGHTING LOGIC (Pure visual state, zero audio interaction)
@@ -160,11 +185,12 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
   useEffect(() => {
     return () => {
       clearHighlightTimers();
+      stopKeepAlive();
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       if (cancelPollRef.current) clearInterval(cancelPollRef.current);
       if (isSupported) window.speechSynthesis.cancel();
     };
-  }, [isSupported, clearHighlightTimers]);
+  }, [isSupported, clearHighlightTimers, stopKeepAlive]);
 
   // Safely cancels speech and waits for the browser queue to actually empty (max 500ms)
   const cancelAndDrainQueue = useCallback((callback) => {
@@ -173,6 +199,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
       return;
     }
 
+    stopKeepAlive();
     if (cancelPollRef.current) clearInterval(cancelPollRef.current);
 
     window.speechSynthesis.cancel();
@@ -191,11 +218,12 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
         if (callback) callback();
       }
     }, interval);
-  }, [isSupported]);
+  }, [isSupported, stopKeepAlive]);
 
   // Full stop function
   const stop = useCallback(() => {
     clearHighlightTimers();
+    stopKeepAlive();
     if (restartTimerRef.current) {
       clearTimeout(restartTimerRef.current);
       restartTimerRef.current = null;
@@ -215,13 +243,14 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     speakingIdRef.current = null;
     activeTextRef.current = null;
     hasRealBoundaryRef.current = false;
-  }, [isSupported, clearHighlightTimers]);
+  }, [isSupported, clearHighlightTimers, stopKeepAlive]);
 
   // Internal helper to construct and start a SpeechSynthesisUtterance
   const speakInternal = useCallback((id, text) => {
     if (!isSupported || !text) return;
 
     clearHighlightTimers();
+    stopKeepAlive();
 
     setSpeakingId(id);
     setIsPaused(false);
@@ -286,6 +315,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
 
     utterance.onend = () => {
       clearHighlightTimers();
+      stopKeepAlive();
       setSpeakingId(null);
       setIsPaused(false);
       setWordRange(null);
@@ -298,6 +328,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     utterance.onerror = (e) => {
       if (e && e.error !== "canceled" && e.error !== "interrupted") {
         clearHighlightTimers();
+        stopKeepAlive();
         setSpeakingId(null);
         setIsPaused(false);
         setWordRange(null);
@@ -308,9 +339,10 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
       }
     };
 
+    startKeepAlive();
     window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
-  }, [isSupported, clearHighlightTimers, startEstimatedHighlighting]);
+  }, [isSupported, clearHighlightTimers, startEstimatedHighlighting, startKeepAlive, stopKeepAlive]);
 
   // Save ref to speakInternal for rate restart effect
   useEffect(() => {
@@ -371,11 +403,13 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     if (isPaused) {
       window.speechSynthesis.resume();
       setIsPaused(false);
+      startKeepAlive();
     } else {
+      stopKeepAlive();
       window.speechSynthesis.pause();
       setIsPaused(true);
     }
-  }, [isSupported, speakingId, isPaused]);
+  }, [isSupported, speakingId, isPaused, startKeepAlive, stopKeepAlive]);
 
   return {
     isSupported,
