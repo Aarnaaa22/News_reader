@@ -6,7 +6,7 @@ const BCP47_MAP = {
   mr: "mr-IN",
 };
 
-// Clean, stable SpeechSynthesis hook that eliminates audio stuttering/popping across all speech speeds
+// Robust Web Speech API hook supporting dynamic rate changes across English, Hindi, & Marathi
 export default function useSpeech({ rate = 1, voiceURI = null, language = "en" } = {}) {
   const isSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
@@ -16,7 +16,10 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = "en" }
   const [voices, setVoices] = useState([]);
 
   const speakingIdRef = useRef(null);
+  const activeTextRef = useRef(null);
   const isPausedRef = useRef(false);
+  const restartTimerRef = useRef(null);
+  const prevRateRef = useRef(rate);
 
   // ---- Voice list (loads asynchronously in most browsers) ----
   useEffect(() => {
@@ -60,35 +63,37 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = "en" }
   // ---- Cleanup on unmount ----
   useEffect(() => {
     return () => {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       if (isSupported) window.speechSynthesis.cancel();
     };
   }, [isSupported]);
 
   const stop = useCallback(() => {
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     if (isSupported) window.speechSynthesis.cancel();
     setSpeakingId(null);
     setIsPaused(false);
     setWordRange(null);
     speakingIdRef.current = null;
+    activeTextRef.current = null;
     isPausedRef.current = false;
   }, [isSupported]);
 
-  const speak = useCallback(
+  const speakInternal = useCallback(
     (id, text) => {
       if (!isSupported || !text) return;
 
-      // Clicking the article that's already speaking stops it.
-      if (speakingIdRef.current === id) {
-        stop();
-        return;
-      }
-
-      // Fully cancel anything else first, then start clean.
       window.speechSynthesis.cancel();
 
+      speakingIdRef.current = id;
+      activeTextRef.current = text;
+      isPausedRef.current = false;
+
+      setSpeakingId(id);
+      setIsPaused(false);
+      setWordRange(null);
+
       const utterance = new SpeechSynthesisUtterance(text);
-      
-      // Clean rate parsing between 0.5x and 2.0x
       const safeRate = Math.max(0.5, Math.min(2.0, Number(rate) || 1));
       utterance.rate = safeRate;
       utterance.lang = BCP47_MAP[language] || "en-US";
@@ -116,6 +121,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = "en" }
         setIsPaused(false);
         setWordRange(null);
         speakingIdRef.current = null;
+        activeTextRef.current = null;
         isPausedRef.current = false;
       };
 
@@ -125,20 +131,43 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = "en" }
           setIsPaused(false);
           setWordRange(null);
           speakingIdRef.current = null;
+          activeTextRef.current = null;
           isPausedRef.current = false;
         }
       };
 
-      setSpeakingId(id);
-      setIsPaused(false);
-      setWordRange(null);
-      speakingIdRef.current = id;
-      isPausedRef.current = false;
-
       window.speechSynthesis.speak(utterance);
     },
-    [isSupported, rate, voiceURI, language, stop]
+    [isSupported, rate, voiceURI, language]
   );
+
+  const speak = useCallback(
+    (id, text) => {
+      if (speakingIdRef.current === id) {
+        stop();
+        return;
+      }
+      speakInternal(id, text);
+    },
+    [speakingIdRef, stop, speakInternal]
+  );
+
+  // Restart speech seamlessly at new rate when user moves rate slider while speaking
+  useEffect(() => {
+    if (prevRateRef.current === rate) return;
+    prevRateRef.current = rate;
+
+    if (isSupported && speakingIdRef.current && activeTextRef.current && !isPausedRef.current) {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = setTimeout(() => {
+        const currentId = speakingIdRef.current;
+        const currentText = activeTextRef.current;
+        if (currentId && currentText) {
+          speakInternal(currentId, currentText);
+        }
+      }, 300);
+    }
+  }, [rate, isSupported, speakInternal]);
 
   const togglePause = useCallback(() => {
     if (!speakingIdRef.current || !isSupported) return;
