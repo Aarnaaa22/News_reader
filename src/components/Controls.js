@@ -41,6 +41,48 @@ function Controls({ voices, isOpen, onClose }) {
         </button>
       </div>
 
+      {/* 1. Language Selection (Placed at top for instant visibility on mobile & desktop) */}
+      <div className="anr-control-group anr-control-group-wide">
+        <span className="anr-control-label" id="language-label">
+          Language / भाषा / भाषा: {language === 'en' ? 'English' : language === 'hi' ? 'Hindi (हिंदी)' : 'Marathi (मराठी)'}
+        </span>
+        <select
+          id="language-select"
+          className="anr-select"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          aria-labelledby="language-label"
+        >
+          <option value="en">English (en)</option>
+          <option value="hi">Hindi - हिंदी (hi)</option>
+          <option value="mr">Marathi - मराठी (mr)</option>
+        </select>
+      </div>
+
+      {/* 2. Voice Selection */}
+      {voices.length > 0 && (
+        <div className="anr-control-group anr-control-group-wide">
+          <span className="anr-control-label" id="voice-label">
+            Voice
+          </span>
+          <select
+            id="voice-select"
+            className="anr-select"
+            value={voiceURI || ""}
+            onChange={(e) => setVoiceURI(e.target.value || null)}
+            aria-labelledby="voice-label"
+          >
+            <option value="">System default</option>
+            {voices.map((v) => (
+              <option key={v.voiceURI} value={v.voiceURI}>
+                {v.name} ({v.lang})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* 3. Contrast Toggle */}
       <div className="anr-control-group">
         <span className="anr-control-label" id="contrast-label">
           Contrast
@@ -56,6 +98,7 @@ function Controls({ voices, isOpen, onClose }) {
         </button>
       </div>
 
+      {/* 4. Text Size Stepper */}
       <div className="anr-control-group">
         <span className="anr-control-label" id="font-label">
           Text size
@@ -90,6 +133,7 @@ function Controls({ voices, isOpen, onClose }) {
         </div>
       </div>
 
+      {/* 5. Easy Mode Toggle */}
       <div className="anr-control-group">
         <span className="anr-control-label" id="easy-label">
           Easy mode
@@ -105,6 +149,7 @@ function Controls({ voices, isOpen, onClose }) {
         </button>
       </div>
 
+      {/* 6. Motion Toggle */}
       <div className="anr-control-group">
         <span className="anr-control-label" id="motion-label">
           Motion
@@ -120,6 +165,7 @@ function Controls({ voices, isOpen, onClose }) {
         </button>
       </div>
 
+      {/* 7. Reading Speed Slider */}
       <div className="anr-control-group anr-control-group-wide">
         <span className="anr-control-label" id="rate-label">
           Reading speed: {speechRate.toFixed(1)}x
@@ -135,45 +181,6 @@ function Controls({ voices, isOpen, onClose }) {
           aria-labelledby="rate-label"
           className="anr-slider"
         />
-      </div>
-
-      {voices.length > 0 && (
-        <div className="anr-control-group anr-control-group-wide">
-          <span className="anr-control-label" id="voice-label">
-            Voice
-          </span>
-          <select
-            id="voice-select"
-            className="anr-select"
-            value={voiceURI || ""}
-            onChange={(e) => setVoiceURI(e.target.value || null)}
-            aria-labelledby="voice-label"
-          >
-            <option value="">System default</option>
-            {voices.map((v) => (
-              <option key={v.voiceURI} value={v.voiceURI}>
-                {v.name} ({v.lang})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="anr-control-group anr-control-group-wide">
-        <span className="anr-control-label" id="language-label">
-          Language: {language === 'en' ? 'English' : language === 'hi' ? 'Hindi' : 'Marathi'}
-        </span>
-        <select
-          id="language-select"
-          className="anr-select"
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          aria-labelledby="language-label"
-        >
-          <option value="en">English (en)</option>
-          <option value="hi">Hindi (hi)</option>
-          <option value="mr">Marathi (mr)</option>
-        </select>
       </div>
     </section>
   );
