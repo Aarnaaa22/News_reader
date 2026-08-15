@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // Wraps the Web Speech API with:
 //  - a queue of one utterance at a time, tracked by an arbitrary "id"
 //  - live word-boundary tracking (via utterance's boundary event)
-//  - dynamic real-time rate updating when user moves speed slider mid-speech
+//  - debounced (300ms) & queue-flushed (polling) rate changes to prevent audio glitching/overlap
 //  - voice & language selection
 export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' } = {}) {
   const isSupported = typeof window !== "undefined" && "speechSynthesis" in window;
@@ -16,13 +16,14 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
 
   const activeIdRef = useRef(null);
   const activeTextRef = useRef(null);
-  const activeCharIndexRef = useRef(0);
   const rateRef = useRef(rate);
   const voiceURIRef = useRef(voiceURI);
   const languageRef = useRef(language);
   const isPausedRef = useRef(isPaused);
+  const restartTimerRef = useRef(null);
+  const cancelPollRef = useRef(null);
 
-  // Keep refs in sync with props
+  // Keep refs updated with current settings
   useEffect(() => {
     rateRef.current = rate;
     voiceURIRef.current = voiceURI;
@@ -45,13 +46,53 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     };
   }, [isSupported]);
 
+  // Clean up pending timers and active speech on unmount
   useEffect(() => {
     return () => {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (cancelPollRef.current) clearInterval(cancelPollRef.current);
       if (isSupported) window.speechSynthesis.cancel();
     };
   }, [isSupported]);
 
+  // Safely cancels speech and waits for the browser queue to actually empty (max 500ms)
+  const cancelAndDrainQueue = useCallback((callback) => {
+    if (!isSupported) {
+      if (callback) callback();
+      return;
+    }
+
+    if (cancelPollRef.current) clearInterval(cancelPollRef.current);
+
+    window.speechSynthesis.cancel();
+
+    let elapsed = 0;
+    const interval = 50;
+    const maxWait = 500;
+
+    cancelPollRef.current = setInterval(() => {
+      elapsed += interval;
+      const isSpeaking = window.speechSynthesis.speaking;
+
+      if (!isSpeaking || elapsed >= maxWait) {
+        clearInterval(cancelPollRef.current);
+        cancelPollRef.current = null;
+        if (callback) callback();
+      }
+    }, interval);
+  }, [isSupported]);
+
+  // Full stop function
   const stop = useCallback(() => {
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+    if (cancelPollRef.current) {
+      clearInterval(cancelPollRef.current);
+      cancelPollRef.current = null;
+    }
+
     if (isSupported) {
       window.speechSynthesis.cancel();
     }
@@ -60,115 +101,121 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     setWordRange(null);
     activeIdRef.current = null;
     activeTextRef.current = null;
-    activeCharIndexRef.current = 0;
   }, [isSupported]);
 
-  const startSpeakingFromChar = useCallback(
-    (id, text, startChar = 0) => {
-      if (!isSupported || !text) return;
+  // Internal helper to construct and start a SpeechSynthesisUtterance
+  const speakInternal = useCallback((id, text) => {
+    if (!isSupported || !text) return;
 
-      window.speechSynthesis.cancel();
+    setSpeakingId(id);
+    setIsPaused(false);
+    setWordRange(null);
+    activeIdRef.current = id;
+    activeTextRef.current = text;
 
-      setSpeakingId(id);
+    const utterance = new SpeechSynthesisUtterance(text);
+    const parsedRate = Math.max(0.5, Math.min(2.0, Number(rateRef.current) || 1.0));
+    utterance.rate = parsedRate;
+    utterance.lang = languageRef.current || 'en';
+
+    let selectedVoice = null;
+    const allVoices = window.speechSynthesis.getVoices();
+
+    if (voiceURIRef.current) {
+      selectedVoice = allVoices.find((v) => v.voiceURI === voiceURIRef.current);
+    }
+
+    if (!selectedVoice || !selectedVoice.lang.startsWith(languageRef.current)) {
+      if (languageRef.current === 'mr') {
+        selectedVoice = allVoices.find(v => v.lang.startsWith('mr')) || allVoices.find(v => v.lang.startsWith('hi'));
+      } else if (languageRef.current === 'hi') {
+        selectedVoice = allVoices.find(v => v.lang.startsWith('hi'));
+      } else {
+        selectedVoice = allVoices.find(v => v.lang.startsWith('en'));
+      }
+
+      if (!selectedVoice) {
+        selectedVoice = allVoices.find(v => v.lang.startsWith(languageRef.current)) || allVoices[0];
+      }
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+
+    utterance.onboundary = (event) => {
+      if (event && typeof event.charIndex === "number") {
+        setWordRange({
+          start: event.charIndex,
+          end: event.charIndex + (event.charLength || 1),
+        });
+      }
+    };
+
+    utterance.onend = () => {
+      setSpeakingId(null);
       setIsPaused(false);
-      activeIdRef.current = id;
-      activeTextRef.current = text;
+      setWordRange(null);
+      activeIdRef.current = null;
+      activeTextRef.current = null;
+    };
 
-      // Slice text from current character index if resuming/updating speed mid-article
-      const textToSpeak = startChar > 0 ? text.slice(startChar) : text;
-
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      const parsedRate = Math.max(0.5, Math.min(2.0, Number(rateRef.current) || 1.0));
-      utterance.rate = parsedRate;
-      utterance.lang = languageRef.current || 'en';
-
-      let selectedVoice = null;
-      const allVoices = window.speechSynthesis.getVoices();
-
-      if (voiceURIRef.current) {
-        selectedVoice = allVoices.find((v) => v.voiceURI === voiceURIRef.current);
-      }
-
-      if (!selectedVoice || !selectedVoice.lang.startsWith(languageRef.current)) {
-        if (languageRef.current === 'mr') {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('mr')) || allVoices.find(v => v.lang.startsWith('hi'));
-        } else if (languageRef.current === 'hi') {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('hi'));
-        } else {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('en'));
-        }
-
-        if (!selectedVoice) {
-          selectedVoice = allVoices.find(v => v.lang.startsWith(languageRef.current)) || allVoices[0];
-        }
-      }
-
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-
-      utterance.onboundary = (event) => {
-        if (event && typeof event.charIndex === "number") {
-          const absoluteIndex = startChar + event.charIndex;
-          activeCharIndexRef.current = absoluteIndex;
-          setWordRange({
-            start: absoluteIndex,
-            end: absoluteIndex + (event.charLength || 1),
-          });
-        }
-      };
-
-      utterance.onend = () => {
+    utterance.onerror = (e) => {
+      if (e && e.error !== "canceled" && e.error !== "interrupted") {
         setSpeakingId(null);
         setIsPaused(false);
         setWordRange(null);
         activeIdRef.current = null;
         activeTextRef.current = null;
-        activeCharIndexRef.current = 0;
-      };
+      }
+    };
 
-      utterance.onerror = (e) => {
-        // Ignore canceled errors triggered by speed adjustments
-        if (e && e.error !== "canceled" && e.error !== "interrupted") {
-          setSpeakingId(null);
-          setIsPaused(false);
-          setWordRange(null);
-          activeIdRef.current = null;
-          activeTextRef.current = null;
-          activeCharIndexRef.current = 0;
-        }
-      };
+    window.speechSynthesis.resume();
+    window.speechSynthesis.speak(utterance);
+  }, [isSupported]);
 
-      // Workaround for browser TTS pause/cancel bugs on mobile & desktop
-      window.speechSynthesis.resume();
-      setTimeout(() => {
-        window.speechSynthesis.speak(utterance);
-      }, 20);
-    },
-    [isSupported]
-  );
+  // Main speak function called when user taps Listen on an article
+  const speak = useCallback((id, text) => {
+    if (!isSupported) return;
 
-  // If rate changes while actively speaking, dynamically update speech speed in real-time!
-  useEffect(() => {
-    if (isSupported && activeIdRef.current && activeTextRef.current && !isPausedRef.current) {
-      startSpeakingFromChar(activeIdRef.current, activeTextRef.current, activeCharIndexRef.current);
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
     }
-  }, [rate, isSupported, startSpeakingFromChar]);
 
-  const speak = useCallback(
-    (id, text) => {
-      if (!isSupported) return;
+    // Clicking the article that's already speaking stops it instead of restarting
+    if (speakingId === id) {
+      stop();
+      return;
+    }
 
-      // Toggling active article stops speech
-      if (speakingId === id) {
-        stop();
-        return;
+    cancelAndDrainQueue(() => {
+      speakInternal(id, text);
+    });
+  }, [isSupported, speakingId, stop, cancelAndDrainQueue, speakInternal]);
+
+  // Debounced (300ms) restart when `rate` changes while an article is currently playing
+  useEffect(() => {
+    if (!isSupported) return;
+
+    // Only restart speech if an article is actively playing
+    if (speakingId !== null && activeIdRef.current && activeTextRef.current && !isPausedRef.current) {
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
       }
 
-      startSpeakingFromChar(id, text, 0);
-    },
-    [isSupported, speakingId, stop, startSpeakingFromChar]
-  );
+      restartTimerRef.current = setTimeout(() => {
+        const currentId = activeIdRef.current;
+        const currentText = activeTextRef.current;
+
+        if (currentId && currentText) {
+          cancelAndDrainQueue(() => {
+            speakInternal(currentId, currentText);
+          });
+        }
+      }, 300);
+    }
+  }, [rate, isSupported, speakingId, cancelAndDrainQueue, speakInternal]);
 
   const togglePause = useCallback(() => {
     if (!speakingId || !isSupported) return;
