@@ -7,13 +7,21 @@ export const MIN_FONT = 0;
 export const MAX_FONT = 5;
 export const FONT_SCALE = [0.875, 1, 1.125, 1.25, 1.4, 1.6];
 
+// Helper to detect system preference for reduced motion on first load
+function getInitialReduceMotion() {
+  if (typeof window !== "undefined" && window.matchMedia) {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  return false;
+}
+
 // Every setting here is persisted to localStorage, so a reader's
 // preferences survive a page refresh or a return visit.
 export function SettingsProvider({ children }) {
   const [highContrast, setHighContrast] = useLocalStorage("anr:highContrast", false);
   const [fontLevel, setFontLevel] = useLocalStorage("anr:fontLevel", 1);
   const [easyMode, setEasyMode] = useLocalStorage("anr:easyMode", false);
-  const [reduceMotion, setReduceMotion] = useLocalStorage("anr:reduceMotion", false);
+  const [reduceMotion, setReduceMotion] = useLocalStorage("anr:reduceMotion", getInitialReduceMotion);
   const [speechRate, setSpeechRate] = useLocalStorage("anr:speechRate", 1);
   const [voiceURI, setVoiceURI] = useLocalStorage("anr:voiceURI", null);
   const [bookmarks, setBookmarks] = useLocalStorage("anr:bookmarks", []);

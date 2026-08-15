@@ -6,6 +6,7 @@ import splitWords from "../utils/splitWords";
 
 function ArticleCard({
   article,
+  index = 0,
   isSpeaking,
   isPaused,
   wordRange,
@@ -117,6 +118,7 @@ function ArticleCard({
       className={`anr-card ${isFocused ? "anr-card-focused" : ""} ${isSpeaking ? "is-speaking" : ""} ${
         !isFocused && onSelectArticle ? "is-clickable" : ""
       }`}
+      style={{ "--stagger-index": index }}
       tabIndex={!isFocused && onSelectArticle ? 0 : undefined}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}

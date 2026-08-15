@@ -13,6 +13,7 @@ import EmptyState from "./components/EmptyState";
 import SkipToContent from "./components/SkipToContent";
 import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
 import SplashScreen from "./components/SplashScreen";
+import FamilyIntro from "./components/FamilyIntro";
 import ARTICLES from "./data/articles";
 
 function AppShell() {
@@ -48,14 +49,20 @@ function AppShell() {
 
   const filteredArticles = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
+
     return ARTICLES.filter((article) => {
-      const matchesTerm =
-        !term ||
+      if (showBookmarkedOnly && !bookmarks.includes(article.id)) {
+        return false;
+      }
+      if (activeCategory !== "All" && article.category !== activeCategory) {
+        return false;
+      }
+      if (!term) return true;
+      return (
         article.title.toLowerCase().includes(term) ||
-        article.content.toLowerCase().includes(term);
-      const matchesCategory = activeCategory === "All" || article.category === activeCategory;
-      const matchesBookmark = !showBookmarkedOnly || bookmarks.includes(article.id);
-      return matchesTerm && matchesCategory && matchesBookmark;
+        article.content.toLowerCase().includes(term) ||
+        article.author.toLowerCase().includes(term)
+      );
     });
   }, [searchTerm, activeCategory, showBookmarkedOnly, bookmarks]);
 
@@ -66,8 +73,8 @@ function AppShell() {
 
   const handleToggleSpeak = useCallback(
     (article) => {
-      const text = `${article.title}. By ${article.author}. ${article.content}`;
-      speech.speak(article.id, text);
+      const fullText = `${article.title}. By ${article.author}. ${article.content}`;
+      speech.toggleSpeak(article.id, fullText);
     },
     [speech]
   );
@@ -122,6 +129,13 @@ function AppShell() {
           </div>
         )}
 
+        {reduceMotion && (
+          <div className="anr-reduce-banner" role="status" aria-live="polite">
+            <span className="anr-reduce-banner-icon" aria-hidden="true">&#x23F8;&#xFE0F;</span>
+            <span>Motion reduced &mdash; animations are turned off</span>
+          </div>
+        )}
+
         {focusedArticle ? (
           <ArticleFocusView
             article={focusedArticle}
@@ -155,9 +169,10 @@ function AppShell() {
               {filteredArticles.length === 0 ? (
                 <EmptyState onClear={clearFilters} />
               ) : (
-                filteredArticles.map((article) => (
+                filteredArticles.map((article, index) => (
                   <ArticleCard
                     key={article.id}
+                    index={index}
                     article={article}
                     isSpeaking={speech.speakingId === article.id}
                     isPaused={speech.speakingId === article.id && speech.isPaused}
@@ -201,11 +216,14 @@ function AppShell() {
 }
 
 export default function App() {
+  const [showFamilyIntro, setShowFamilyIntro] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
 
   return (
     <SettingsProvider>
-      {showSplash ? (
+      {showFamilyIntro ? (
+        <FamilyIntro onFinish={() => setShowFamilyIntro(false)} />
+      ) : showSplash ? (
         <SplashScreen onFinish={() => setShowSplash(false)} />
       ) : (
         <AppShell />
