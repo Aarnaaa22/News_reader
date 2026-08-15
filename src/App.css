@@ -1222,6 +1222,19 @@
     border-bottom: 2px solid var(--border) !important;
   }
 
+  .anr-voice-note {
+    font-size: 0.82em !important;
+    color: var(--text) !important;
+    background: rgba(200, 140, 40, 0.12) !important;
+    border-left: 3px solid var(--accent) !important;
+    padding: 6px 10px !important;
+    border-radius: 4px !important;
+    margin-top: 6px !important;
+    margin-bottom: 0 !important;
+    line-height: 1.4 !important;
+    font-family: var(--font-sans) !important;
+  }
+
   .anr-controls-title-mobile {
     font-family: var(--font-serif) !important;
     font-size: 1.5em !important;

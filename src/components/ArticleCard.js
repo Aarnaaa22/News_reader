@@ -10,6 +10,7 @@ function ArticleCard({
   isSpeaking,
   isPaused,
   wordRange,
+  isEstimatedHighlight = false,
   isSupported,
   onToggleSpeak,
   onTogglePause,
@@ -132,6 +133,9 @@ function ArticleCard({
           <span className="anr-now-reading" role="status">
             <span className="anr-pulse-dot" aria-hidden="true" />
             {isPaused ? "Paused" : "Reading aloud"}
+            {isEstimatedHighlight && (
+              <span className="anr-estimated-badge" title="Highlighting speed is estimated for this language"> (Estimated)</span>
+            )}
           </span>
         )}
         <button

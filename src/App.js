@@ -150,6 +150,7 @@ function AppShell() {
             isSpeaking={speech.speakingId === focusedArticle.id}
             isPaused={speech.speakingId === focusedArticle.id && speech.isPaused}
             wordRange={speech.speakingId === focusedArticle.id ? speech.wordRange : null}
+            isEstimatedHighlight={speech.speakingId === focusedArticle.id && speech.isEstimatedHighlight}
             isSupported={speech.isSupported}
             isAnotherSpeaking={
               speech.speakingId !== null && speech.speakingId !== focusedArticle.id
@@ -161,6 +162,8 @@ function AppShell() {
           <>
             <Controls
               voices={speech.voices}
+              filteredVoices={speech.filteredVoices}
+              voiceWarning={speech.voiceWarning}
               isOpen={mobileMenuOpen}
               onClose={() => setMobileMenuOpen(false)}
             />
@@ -188,6 +191,7 @@ function AppShell() {
                     isSpeaking={speech.speakingId === article.id}
                     isPaused={speech.speakingId === article.id && speech.isPaused}
                     wordRange={speech.speakingId === article.id ? speech.wordRange : null}
+                    isEstimatedHighlight={speech.speakingId === article.id && speech.isEstimatedHighlight}
                     isSupported={speech.isSupported}
                     isAnotherSpeaking={speech.speakingId !== null && speech.speakingId !== article.id}
                     onToggleSpeak={handleToggleSpeak}

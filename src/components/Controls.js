@@ -3,7 +3,7 @@ import { useSettings, MIN_FONT, MAX_FONT } from "../context/SettingsContext";
 
 // Reads and writes settings from SettingsContext.
 // Supports mobile hamburger drawer state via isOpen & onClose props.
-function Controls({ voices, isOpen, onClose }) {
+function Controls({ voices = [], filteredVoices, voiceWarning, isOpen, onClose }) {
   const {
     highContrast,
     toggleContrast,
@@ -23,6 +23,9 @@ function Controls({ voices, isOpen, onClose }) {
     setLanguage,
   } = useSettings();
 
+  // Active voice list: use filteredVoices for current language if available, or full voices list
+  const activeVoicesList = filteredVoices && filteredVoices.length > 0 ? filteredVoices : voices;
+
   return (
     <section
       className={`anr-controls ${isOpen ? "is-mobile-open" : ""}`}
@@ -41,7 +44,7 @@ function Controls({ voices, isOpen, onClose }) {
         </button>
       </div>
 
-      {/* 1. Language Selection (Placed at top for instant visibility on mobile & desktop) */}
+      {/* 1. Language Selection (Placed at top for instant visibility) */}
       <div className="anr-control-group anr-control-group-wide">
         <span className="anr-control-label" id="language-label">
           Language / भाषा / भाषा: {language === 'en' ? 'English' : language === 'hi' ? 'Hindi (हिंदी)' : 'Marathi (मराठी)'}
@@ -60,27 +63,33 @@ function Controls({ voices, isOpen, onClose }) {
       </div>
 
       {/* 2. Voice Selection */}
-      {voices.length > 0 && (
-        <div className="anr-control-group anr-control-group-wide">
-          <span className="anr-control-label" id="voice-label">
-            Voice
-          </span>
-          <select
-            id="voice-select"
-            className="anr-select"
-            value={voiceURI || ""}
-            onChange={(e) => setVoiceURI(e.target.value || null)}
-            aria-labelledby="voice-label"
-          >
-            <option value="">System default</option>
-            {voices.map((v) => (
-              <option key={v.voiceURI} value={v.voiceURI}>
-                {v.name} ({v.lang})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div className="anr-control-group anr-control-group-wide">
+        <span className="anr-control-label" id="voice-label">
+          Voice ({language === 'hi' ? 'Hindi' : language === 'mr' ? 'Marathi' : 'English'})
+        </span>
+        <select
+          id="voice-select"
+          className="anr-select"
+          value={voiceURI || ""}
+          onChange={(e) => setVoiceURI(e.target.value || null)}
+          aria-labelledby="voice-label"
+        >
+          <option value="">System default voice</option>
+          {activeVoicesList.map((v) => (
+            <option key={v.voiceURI} value={v.voiceURI}>
+              {v.name} ({v.lang})
+            </option>
+          ))}
+        </select>
+
+        {/* Calm notice if no native voice for selected language is installed */}
+        {voiceWarning && (
+          <p className="anr-voice-note" role="status" aria-live="polite">
+            <span aria-hidden="true">ℹ️ </span>
+            {voiceWarning}
+          </p>
+        )}
+      </div>
 
       {/* 3. Contrast Toggle */}
       <div className="anr-control-group">
