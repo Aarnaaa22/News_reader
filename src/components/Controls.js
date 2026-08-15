@@ -174,7 +174,7 @@ function Controls({ voices, isOpen, onClose }) {
           id="rate-slider"
           type="range"
           min="0.5"
-          max="1.5"
+          max="2.0"
           step="0.1"
           value={speechRate}
           onChange={(e) => setSpeechRate(parseFloat(e.target.value))}

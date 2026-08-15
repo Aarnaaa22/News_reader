@@ -2,23 +2,35 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 // Wraps the Web Speech API with:
 //  - a queue of one utterance at a time, tracked by an arbitrary "id"
-//  - live word-boundary tracking (via the utterance's `boundary` event)
-//    so callers can highlight the word currently being spoken (in title & content)
-//  - a list of installed voices, refreshed once they load
-//  - adjustable rate (0.5x - 1.5x) and voice selection
+//  - live word-boundary tracking (via utterance's boundary event)
+//  - dynamic real-time rate updating when user moves speed slider mid-speech
+//  - voice & language selection
 export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' } = {}) {
   const isSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
   const [speakingId, setSpeakingId] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
-  const [wordRange, setWordRange] = useState(null); // { start, end } char indices in current text
+  const [wordRange, setWordRange] = useState(null);
   const [voices, setVoices] = useState([]);
   const [voiceError] = useState(null);
 
-  const utteranceRef = useRef(null);
-  const audioRef = useRef(null);
+  const activeIdRef = useRef(null);
+  const activeTextRef = useRef(null);
+  const activeCharIndexRef = useRef(0);
+  const rateRef = useRef(rate);
+  const voiceURIRef = useRef(voiceURI);
+  const languageRef = useRef(language);
+  const isPausedRef = useRef(isPaused);
 
-  // Voice lists load asynchronously in most browsers.
+  // Keep refs in sync with props
+  useEffect(() => {
+    rateRef.current = rate;
+    voiceURIRef.current = voiceURI;
+    languageRef.current = language;
+    isPausedRef.current = isPaused;
+  }, [rate, voiceURI, language, isPaused]);
+
+  // Voice lists load asynchronously in most browsers
   useEffect(() => {
     if (!isSupported) return;
 
@@ -36,39 +48,130 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
   useEffect(() => {
     return () => {
       if (isSupported) window.speechSynthesis.cancel();
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
     };
   }, [isSupported]);
 
   const stop = useCallback(() => {
-    if (isSupported) window.speechSynthesis.cancel();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+    if (isSupported) {
+      window.speechSynthesis.cancel();
     }
     setSpeakingId(null);
     setIsPaused(false);
     setWordRange(null);
+    activeIdRef.current = null;
+    activeTextRef.current = null;
+    activeCharIndexRef.current = 0;
   }, [isSupported]);
 
-  const togglePause = useCallback(() => {
-    if (!speakingId) return;
+  const startSpeakingFromChar = useCallback(
+    (id, text, startChar = 0) => {
+      if (!isSupported || !text) return;
 
-    if (audioRef.current) {
-      if (isPaused) {
-        audioRef.current.play();
-        setIsPaused(false);
-      } else {
-        audioRef.current.pause();
-        setIsPaused(true);
+      window.speechSynthesis.cancel();
+
+      setSpeakingId(id);
+      setIsPaused(false);
+      activeIdRef.current = id;
+      activeTextRef.current = text;
+
+      // Slice text from current character index if resuming/updating speed mid-article
+      const textToSpeak = startChar > 0 ? text.slice(startChar) : text;
+
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      const parsedRate = Math.max(0.5, Math.min(2.0, Number(rateRef.current) || 1.0));
+      utterance.rate = parsedRate;
+      utterance.lang = languageRef.current || 'en';
+
+      let selectedVoice = null;
+      const allVoices = window.speechSynthesis.getVoices();
+
+      if (voiceURIRef.current) {
+        selectedVoice = allVoices.find((v) => v.voiceURI === voiceURIRef.current);
       }
-      return;
-    }
 
-    if (!isSupported) return;
+      if (!selectedVoice || !selectedVoice.lang.startsWith(languageRef.current)) {
+        if (languageRef.current === 'mr') {
+          selectedVoice = allVoices.find(v => v.lang.startsWith('mr')) || allVoices.find(v => v.lang.startsWith('hi'));
+        } else if (languageRef.current === 'hi') {
+          selectedVoice = allVoices.find(v => v.lang.startsWith('hi'));
+        } else {
+          selectedVoice = allVoices.find(v => v.lang.startsWith('en'));
+        }
+
+        if (!selectedVoice) {
+          selectedVoice = allVoices.find(v => v.lang.startsWith(languageRef.current)) || allVoices[0];
+        }
+      }
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+
+      utterance.onboundary = (event) => {
+        if (event && typeof event.charIndex === "number") {
+          const absoluteIndex = startChar + event.charIndex;
+          activeCharIndexRef.current = absoluteIndex;
+          setWordRange({
+            start: absoluteIndex,
+            end: absoluteIndex + (event.charLength || 1),
+          });
+        }
+      };
+
+      utterance.onend = () => {
+        setSpeakingId(null);
+        setIsPaused(false);
+        setWordRange(null);
+        activeIdRef.current = null;
+        activeTextRef.current = null;
+        activeCharIndexRef.current = 0;
+      };
+
+      utterance.onerror = (e) => {
+        // Ignore canceled errors triggered by speed adjustments
+        if (e && e.error !== "canceled" && e.error !== "interrupted") {
+          setSpeakingId(null);
+          setIsPaused(false);
+          setWordRange(null);
+          activeIdRef.current = null;
+          activeTextRef.current = null;
+          activeCharIndexRef.current = 0;
+        }
+      };
+
+      // Workaround for browser TTS pause/cancel bugs on mobile & desktop
+      window.speechSynthesis.resume();
+      setTimeout(() => {
+        window.speechSynthesis.speak(utterance);
+      }, 20);
+    },
+    [isSupported]
+  );
+
+  // If rate changes while actively speaking, dynamically update speech speed in real-time!
+  useEffect(() => {
+    if (isSupported && activeIdRef.current && activeTextRef.current && !isPausedRef.current) {
+      startSpeakingFromChar(activeIdRef.current, activeTextRef.current, activeCharIndexRef.current);
+    }
+  }, [rate, isSupported, startSpeakingFromChar]);
+
+  const speak = useCallback(
+    (id, text) => {
+      if (!isSupported) return;
+
+      // Toggling active article stops speech
+      if (speakingId === id) {
+        stop();
+        return;
+      }
+
+      startSpeakingFromChar(id, text, 0);
+    },
+    [isSupported, speakingId, stop, startSpeakingFromChar]
+  );
+
+  const togglePause = useCallback(() => {
+    if (!speakingId || !isSupported) return;
 
     if (isPaused) {
       window.speechSynthesis.resume();
@@ -78,80 +181,6 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
       setIsPaused(true);
     }
   }, [isSupported, speakingId, isPaused]);
-
-  const speak = useCallback(
-    (id, text) => {
-      if (!isSupported) return;
-
-      // Clicking the article that's already speaking stops it instead of restarting.
-      if (speakingId === id) {
-        stop();
-        return;
-      }
-
-      stop(); // ensure anything playing is stopped
-
-      setSpeakingId(id);
-      setIsPaused(false);
-      setWordRange(null);
-
-      // Instant device Web Speech API with microsecond boundary tracking
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = rate;
-      utterance.lang = language;
-
-      let selectedVoice = null;
-      const allVoices = window.speechSynthesis.getVoices();
-
-      if (voiceURI) {
-        selectedVoice = allVoices.find((v) => v.voiceURI === voiceURI);
-      }
-
-      // Intelligently find best matching voice for selected language
-      if (!selectedVoice || !selectedVoice.lang.startsWith(language)) {
-        if (language === 'mr') {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('mr')) || allVoices.find(v => v.lang.startsWith('hi'));
-        } else if (language === 'hi') {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('hi'));
-        } else {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('en'));
-        }
-        
-        if (!selectedVoice) {
-          selectedVoice = allVoices.find(v => v.lang.startsWith(language)) || allVoices[0];
-        }
-      }
-
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-
-      // Track precise character index boundary for real-time word highlighting (title + content)
-      utterance.onboundary = (event) => {
-        if (event && typeof event.charIndex === "number") {
-          setWordRange({
-            start: event.charIndex,
-            end: event.charIndex + (event.charLength || 1),
-          });
-        }
-      };
-      utterance.onend = () => {
-        setSpeakingId(null);
-        setIsPaused(false);
-        setWordRange(null);
-      };
-      utterance.onerror = () => {
-        setSpeakingId(null);
-        setIsPaused(false);
-        setWordRange(null);
-      };
-
-      utteranceRef.current = utterance;
-      // Start instant playback (<50ms delay)
-      window.speechSynthesis.speak(utterance);
-    },
-    [isSupported, speakingId, rate, voiceURI, language, stop]
-  );
 
   return {
     isSupported,
