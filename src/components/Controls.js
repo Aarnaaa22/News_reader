@@ -1,11 +1,9 @@
 import React from "react";
 import { useSettings, MIN_FONT, MAX_FONT } from "../context/SettingsContext";
 
-// Reads and writes almost everything straight from SettingsContext, so
-// App doesn't need to thread a dozen props down manually. Voice list is
-// the one thing that has to come from the useSpeech hook (App owns it),
-// so it's still passed in as a prop.
-function Controls({ voices }) {
+// Reads and writes settings from SettingsContext.
+// Supports mobile hamburger drawer state via isOpen & onClose props.
+function Controls({ voices, isOpen, onClose }) {
   const {
     highContrast,
     toggleContrast,
@@ -26,7 +24,23 @@ function Controls({ voices }) {
   } = useSettings();
 
   return (
-    <section className="anr-controls" aria-label="Accessibility settings">
+    <section
+      className={`anr-controls ${isOpen ? "is-mobile-open" : ""}`}
+      aria-label="Accessibility settings"
+    >
+      {/* Mobile Drawer Header */}
+      <div className="anr-controls-header-mobile">
+        <h2 className="anr-controls-title-mobile">Reading Controls</h2>
+        <button
+          type="button"
+          className="anr-controls-close-btn"
+          onClick={onClose}
+          aria-label="Close accessibility controls menu"
+        >
+          <span aria-hidden="true">&times;</span> Close
+        </button>
+      </div>
+
       <div className="anr-control-group">
         <span className="anr-control-label" id="contrast-label">
           Contrast

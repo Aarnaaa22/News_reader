@@ -37,6 +37,7 @@ function AppShell() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [focusedArticleId, setFocusedArticleId] = useState(null);
 
@@ -101,6 +102,8 @@ function AppShell() {
     () => {
       if (helpOpen) {
         setHelpOpen(false);
+      } else if (mobileMenuOpen) {
+        setMobileMenuOpen(false);
       } else if (speech.speakingId !== null) {
         speech.stop();
       } else if (focusedArticleId !== null) {
@@ -119,7 +122,11 @@ function AppShell() {
     >
       <SkipToContent targetId="main-content" />
 
-      <Header onOpenHelp={() => setHelpOpen(true)} />
+      <Header
+        onOpenHelp={() => setHelpOpen(true)}
+        onToggleMobileMenu={() => setMobileMenuOpen((v) => !v)}
+        isMobileMenuOpen={mobileMenuOpen}
+      />
 
       <main className="anr-main">
         {easyMode && (
@@ -152,7 +159,11 @@ function AppShell() {
           />
         ) : (
           <>
-            <Controls voices={speech.voices} />
+            <Controls
+              voices={speech.voices}
+              isOpen={mobileMenuOpen}
+              onClose={() => setMobileMenuOpen(false)}
+            />
 
             <SearchBar ref={searchRef} value={searchTerm} onChange={setSearchTerm} />
 

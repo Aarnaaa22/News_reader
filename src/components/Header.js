@@ -1,6 +1,6 @@
 import React from "react";
 
-function Header({ onOpenHelp }) {
+function Header({ onOpenHelp, onToggleMobileMenu, isMobileMenuOpen }) {
   // Today's date formatted as a classic newspaper date line (e.g. "Saturday, August 15, 2026")
   const todayDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -39,14 +39,30 @@ function Header({ onOpenHelp }) {
           </div>
         </div>
 
-        <button
-          type="button"
-          className="anr-help-btn"
-          onClick={onOpenHelp}
-          aria-label="Show keyboard shortcuts"
-        >
-          <span aria-hidden="true">?</span>
-        </button>
+        <div className="anr-header-actions">
+          {/* Mobile Hamburger Settings Button */}
+          <button
+            type="button"
+            className={`anr-menu-btn ${isMobileMenuOpen ? "is-active" : ""}`}
+            onClick={onToggleMobileMenu}
+            aria-expanded={isMobileMenuOpen}
+            aria-label="Toggle accessibility controls menu"
+          >
+            <span aria-hidden="true" className="anr-menu-icon">
+              {isMobileMenuOpen ? "\u2715" : "\u2630"}
+            </span>
+            <span className="anr-menu-text">Settings</span>
+          </button>
+
+          <button
+            type="button"
+            className="anr-help-btn"
+            onClick={onOpenHelp}
+            aria-label="Show keyboard shortcuts"
+          >
+            <span aria-hidden="true">?</span>
+          </button>
+        </div>
       </div>
       <div className="anr-header-rule" aria-hidden="true" />
     </header>

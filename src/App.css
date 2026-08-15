@@ -330,11 +330,119 @@
   color: var(--accent);
 }
 
+/* Header Actions & Mobile Hamburger Button */
+.anr-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.anr-menu-btn {
+  display: none; /* Hidden on desktop */
+  align-items: center;
+  gap: 8px;
+  min-height: var(--btn-min-h);
+  padding: 0 16px;
+  border-radius: var(--radius);
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 1.02em;
+  cursor: pointer;
+}
+
+.anr-menu-btn:hover,
+.anr-menu-btn.is-active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.anr-menu-icon {
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+.anr-controls-header-mobile {
+  display: none; /* Hidden on desktop */
+}
+
 /* ---------- MAIN / CONTROLS ---------- */
 .anr-main {
   max-width: 980px;
   margin: 0 auto;
   padding: calc(var(--pad-unit) * 1.25);
+}
+
+@media (max-width: 768px) {
+  .anr-menu-btn {
+    display: inline-flex;
+  }
+
+  /* Hide inline controls panel on mobile by default so articles appear immediately! */
+  .anr-controls {
+    display: none;
+  }
+
+  /* Full-screen / Drawer overlay when Hamburger Settings button is tapped */
+  .anr-controls.is-mobile-open {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: var(--bg);
+    padding: 1.5rem 1.2rem 2.5rem 1.2rem;
+    overflow-y: auto;
+    border-radius: 0;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  }
+
+  .anr-controls-header-mobile {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding-bottom: 1rem;
+    margin-bottom: 1.2rem;
+    border-bottom: 2px solid var(--border);
+  }
+
+  .anr-controls-title-mobile {
+    font-family: var(--font-serif);
+    font-size: 1.5em;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+  }
+
+  .anr-controls-close-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 16px;
+    background: var(--surface);
+    color: var(--text);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 0.95em;
+    cursor: pointer;
+  }
+
+  .anr-controls-close-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .anr-controls.is-mobile-open .anr-control-group {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 .anr-controls {
