@@ -9,9 +9,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const PORT = 5000;
-
-app.post("/tts", async (req, res) => {
+const handleTTS = async (req, res) => {
   try {
     const { text, language } = req.body;
 
@@ -30,7 +28,7 @@ app.post("/tts", async (req, res) => {
           "xi-api-key": process.env.ELEVEN_API_KEY,
           "Content-Type": "application/json"
         },
-        responseType: "arraybuffer" // important for audio
+        responseType: "arraybuffer"
       }
     );
 
@@ -46,8 +44,16 @@ app.post("/tts", async (req, res) => {
     let detailsString = typeof errorDetails === 'object' && errorDetails instanceof Buffer ? errorDetails.toString('utf8') : JSON.stringify(errorDetails);
     res.status(500).json({ error: "Failed to generate speech", details: detailsString });
   }
-});
+};
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+app.post("/tts", handleTTS);
+app.post("/api/tts", handleTTS);
+
+const PORT = process.env.PORT || 5000;
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
