@@ -1134,3 +1134,88 @@
   border-radius: 999px;
   font-weight: 700;
 }
+
+/* ==========================================================================
+   STRICT MOBILE RESPONSIVE HAMBURGER & CONTROLS DRAWER FIX
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* 1. Header Layout on Mobile */
+  .anr-header-inner {
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+    align-items: flex-start !important;
+  }
+
+  .anr-header-brand {
+    flex: 1 1 auto !important;
+  }
+
+  .anr-header-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-left: auto !important;
+  }
+
+  .anr-menu-btn {
+    display: inline-flex !important;
+  }
+
+  /* 2. STRICTLY HIDE CONTROLS PANEL ON MOBILE BY DEFAULT (ZERO GAP) */
+  .anr-controls {
+    display: none !important;
+  }
+
+  /* 3. SHOW CONTROLS ONLY AS A FIXED OVERLAY WHEN IS-MOBILE-OPEN IS ACTIVE */
+  .anr-controls.is-mobile-open {
+    display: flex !important;
+    flex-direction: column !important;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 99999 !important;
+    background: var(--bg, #f7f4ed) !important;
+    padding: 1.5rem 1.2rem 3rem 1.2rem !important;
+    overflow-y: auto !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  .anr-controls-header-mobile {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    padding-bottom: 1rem !important;
+    margin-bottom: 1.2rem !important;
+    border-bottom: 2px solid var(--border) !important;
+  }
+
+  .anr-controls-title-mobile {
+    font-family: var(--font-serif) !important;
+    font-size: 1.5em !important;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+    margin: 0 !important;
+  }
+
+  .anr-controls-close-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-height: 44px !important;
+    padding: 0 16px !important;
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    font-family: var(--font-sans) !important;
+    font-weight: 700 !important;
+    font-size: 0.95em !important;
+    cursor: pointer !important;
+  }
+}
