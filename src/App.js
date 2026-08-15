@@ -115,6 +115,13 @@ function AppShell() {
       <Header onOpenHelp={() => setHelpOpen(true)} />
 
       <main className="anr-main">
+        {easyMode && (
+          <div className="anr-easy-banner" role="status" aria-live="polite">
+            <span className="anr-easy-banner-icon" aria-hidden="true">&#x2728;</span>
+            <span>Easy Mode is on &mdash; larger text and simpler layout</span>
+          </div>
+        )}
+
         {focusedArticle ? (
           <ArticleFocusView
             article={focusedArticle}

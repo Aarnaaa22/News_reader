@@ -4,15 +4,6 @@ import translateText from "../utils/translateText";
 import estimateReadingTime from "../utils/estimateReadingTime";
 import splitWords from "../utils/splitWords";
 
-// The utterance spoken for each article is "{title}. By {author}. {content}",
-// built in App. To highlight the right word inside just the content
-// paragraph, we need to know how long that spoken prefix is so the
-// boundary event's charIndex (which counts from the start of the whole
-// utterance) can be translated into an offset within `content` alone.
-function buildSpokenPrefix(article) {
-  return `${article.title}. By ${article.author}. `;
-}
-
 function ArticleCard({
   article,
   isSpeaking,
@@ -65,11 +56,44 @@ function ArticleCard({
 
   const readingTime = useMemo(() => estimateReadingTime(translatedContent), [translatedContent]);
 
-  const words = useMemo(() => splitWords(translatedContent), [translatedContent]);
-  const prefixLength = useMemo(() => buildSpokenPrefix(translatedArticle).length, [translatedArticle]);
+  // Tokenize both Title and Content into word tokens with character offsets
+  const titleWords = useMemo(() => splitWords(translatedTitle), [translatedTitle]);
+  const contentWords = useMemo(() => splitWords(translatedContent), [translatedContent]);
 
-  const highlightIndex =
-    isSpeaking && wordRange ? wordRange.start - prefixLength : -1;
+  // Spoken text structure in App.js: `${article.title}. By ${article.author}. ${article.content}`
+  // Calculate character offset where content starts
+  const contentOffset = useMemo(() => {
+    return `${translatedTitle}. By ${article.author}. `.length;
+  }, [translatedTitle, article.author]);
+
+  const activeCharIndex = isSpeaking && wordRange ? wordRange.start : -1;
+
+  // Active word index inside the Title header (h2)
+  const activeTitleWordIndex = useMemo(() => {
+    if (!isSpeaking || activeCharIndex < 0 || titleWords.length === 0) return -1;
+    const exact = titleWords.findIndex(
+      (w) => w.start <= activeCharIndex && activeCharIndex <= w.end
+    );
+    if (exact !== -1) return exact;
+    for (let i = titleWords.length - 1; i >= 0; i--) {
+      if (titleWords[i].start <= activeCharIndex && activeCharIndex < contentOffset) return i;
+    }
+    return -1;
+  }, [isSpeaking, activeCharIndex, titleWords, contentOffset]);
+
+  // Active word index inside the Content paragraph (p)
+  const activeContentWordIndex = useMemo(() => {
+    if (!isSpeaking || activeCharIndex < contentOffset || contentWords.length === 0) return -1;
+    const relIndex = activeCharIndex - contentOffset;
+    const exact = contentWords.findIndex(
+      (w) => w.start <= relIndex && relIndex <= w.end
+    );
+    if (exact !== -1) return exact;
+    for (let i = contentWords.length - 1; i >= 0; i--) {
+      if (contentWords[i].start <= relIndex) return i;
+    }
+    return 0;
+  }, [isSpeaking, activeCharIndex, contentOffset, contentWords]);
 
   // Handle clicking anywhere on the card to trigger zoom-in focus view
   const handleCardClick = () => {
@@ -123,7 +147,20 @@ function ArticleCard({
       </div>
 
       <div style={{ transition: "opacity 0.3s ease", opacity: isTranslating ? 0.5 : 1 }}>
-        <h2 className="anr-card-title">{isTranslating ? "Translating..." : translatedTitle}</h2>
+        <h2 className="anr-card-title">
+          {isTranslating ? (
+            "Translating..."
+          ) : (
+            titleWords.map((token, i) => {
+              const isCurrent = isSpeaking && i === activeTitleWordIndex;
+              return (
+                <React.Fragment key={i}>
+                  <span className={isCurrent ? "anr-word-highlight" : undefined}>{token.word}</span>{" "}
+                </React.Fragment>
+              );
+            })
+          )}
+        </h2>
         <p className="anr-card-byline">
           By {article.author} &middot; {article.date}
         </p>
@@ -132,9 +169,8 @@ function ArticleCard({
           <p className="anr-card-content" aria-live="polite">Translating content...</p>
         ) : (
           <p className="anr-card-content">
-            {words.map((token, i) => {
-              const isCurrent =
-                highlightIndex >= 0 && token.start <= highlightIndex && highlightIndex < token.end;
+            {contentWords.map((token, i) => {
+              const isCurrent = isSpeaking && i === activeContentWordIndex;
               return (
                 <React.Fragment key={i}>
                   <span className={isCurrent ? "anr-word-highlight" : undefined}>{token.word}</span>{" "}
