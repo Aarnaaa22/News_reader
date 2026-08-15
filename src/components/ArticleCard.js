@@ -13,7 +13,18 @@ function buildSpokenPrefix(article) {
   return `${article.title}. By ${article.author}. `;
 }
 
-function ArticleCard({ article, isSpeaking, isPaused, wordRange, isSupported, onToggleSpeak, onTogglePause, isAnotherSpeaking }) {
+function ArticleCard({
+  article,
+  isSpeaking,
+  isPaused,
+  wordRange,
+  isSupported,
+  onToggleSpeak,
+  onTogglePause,
+  isAnotherSpeaking,
+  onSelectArticle,
+  isFocused = false,
+}) {
   const { bookmarks, toggleBookmark, language } = useSettings();
   const isBookmarked = bookmarks.includes(article.id);
 
@@ -60,8 +71,34 @@ function ArticleCard({ article, isSpeaking, isPaused, wordRange, isSupported, on
   const highlightIndex =
     isSpeaking && wordRange ? wordRange.start - prefixLength : -1;
 
+  // Handle clicking anywhere on the card to trigger zoom-in focus view
+  const handleCardClick = () => {
+    if (!isFocused && onSelectArticle) {
+      onSelectArticle(article.id);
+    }
+  };
+
+  // Keyboard support: Enter/Space triggers card focus view when focused on card container
+  const handleCardKeyDown = (e) => {
+    if (!isFocused && onSelectArticle && (e.key === "Enter" || e.key === " ")) {
+      if (e.target.tagName !== "BUTTON") {
+        e.preventDefault();
+        onSelectArticle(article.id);
+      }
+    }
+  };
+
   return (
-    <article className={`anr-card ${isSpeaking ? "is-speaking" : ""}`}>
+    <article
+      className={`anr-card ${isFocused ? "anr-card-focused" : ""} ${isSpeaking ? "is-speaking" : ""} ${
+        !isFocused && onSelectArticle ? "is-clickable" : ""
+      }`}
+      tabIndex={!isFocused && onSelectArticle ? 0 : undefined}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      role={!isFocused && onSelectArticle ? "button" : undefined}
+      aria-label={!isFocused && onSelectArticle ? `View full article: ${article.title}` : undefined}
+    >
       <div className="anr-card-meta">
         <span className="anr-badge">{article.category}</span>
         <span className="anr-reading-time">{readingTime}</span>
@@ -74,7 +111,10 @@ function ArticleCard({ article, isSpeaking, isPaused, wordRange, isSupported, on
         <button
           type="button"
           className={`anr-bookmark-btn ${isBookmarked ? "is-on" : ""}`}
-          onClick={() => toggleBookmark(article.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleBookmark(article.id);
+          }}
           aria-pressed={isBookmarked}
           aria-label={isBookmarked ? "Remove bookmark" : "Bookmark this article"}
         >
@@ -109,7 +149,10 @@ function ArticleCard({ article, isSpeaking, isPaused, wordRange, isSupported, on
         <button
           type="button"
           className={`anr-speak-btn ${isSpeaking ? "is-active" : ""}`}
-          onClick={() => onToggleSpeak(translatedArticle)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSpeak(translatedArticle);
+          }}
           disabled={!isSupported || isAnotherSpeaking}
           aria-pressed={isSpeaking}
         >
@@ -120,7 +163,14 @@ function ArticleCard({ article, isSpeaking, isPaused, wordRange, isSupported, on
         </button>
 
         {isSpeaking && (
-          <button type="button" className="anr-pause-btn" onClick={onTogglePause}>
+          <button
+            type="button"
+            className="anr-pause-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePause();
+            }}
+          >
             {isPaused ? "Resume" : "Pause"}
           </button>
         )}

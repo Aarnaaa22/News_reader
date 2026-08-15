@@ -8,9 +8,11 @@ import Controls from "./components/Controls";
 import SearchBar from "./components/SearchBar";
 import CategoryFilter from "./components/CategoryFilter";
 import ArticleCard from "./components/ArticleCard";
+import ArticleFocusView from "./components/ArticleFocusView";
 import EmptyState from "./components/EmptyState";
 import SkipToContent from "./components/SkipToContent";
 import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
+import SplashScreen from "./components/SplashScreen";
 import ARTICLES from "./data/articles";
 
 function AppShell() {
@@ -35,6 +37,7 @@ function AppShell() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [focusedArticleId, setFocusedArticleId] = useState(null);
 
   const searchRef = useRef(null);
 
@@ -55,6 +58,11 @@ function AppShell() {
       return matchesTerm && matchesCategory && matchesBookmark;
     });
   }, [searchTerm, activeCategory, showBookmarkedOnly, bookmarks]);
+
+  const focusedArticle = useMemo(
+    () => ARTICLES.find((a) => a.id === focusedArticleId) || null,
+    [focusedArticleId]
+  );
 
   const handleToggleSpeak = useCallback(
     (article) => {
@@ -84,8 +92,13 @@ function AppShell() {
   useKeyboardShortcut(
     "Escape",
     () => {
-      if (helpOpen) setHelpOpen(false);
-      else speech.stop();
+      if (helpOpen) {
+        setHelpOpen(false);
+      } else if (speech.speakingId !== null) {
+        speech.stop();
+      } else if (focusedArticleId !== null) {
+        setFocusedArticleId(null);
+      }
     },
     { allowInInputs: true }
   );
@@ -102,18 +115,57 @@ function AppShell() {
       <Header onOpenHelp={() => setHelpOpen(true)} />
 
       <main className="anr-main">
-        <Controls voices={speech.voices} />
+        {focusedArticle ? (
+          <ArticleFocusView
+            article={focusedArticle}
+            onBack={() => setFocusedArticleId(null)}
+            isSpeaking={speech.speakingId === focusedArticle.id}
+            isPaused={speech.speakingId === focusedArticle.id && speech.isPaused}
+            wordRange={speech.speakingId === focusedArticle.id ? speech.wordRange : null}
+            isSupported={speech.isSupported}
+            isAnotherSpeaking={
+              speech.speakingId !== null && speech.speakingId !== focusedArticle.id
+            }
+            onToggleSpeak={handleToggleSpeak}
+            onTogglePause={speech.togglePause}
+          />
+        ) : (
+          <>
+            <Controls voices={speech.voices} />
 
-        <SearchBar ref={searchRef} value={searchTerm} onChange={setSearchTerm} />
+            <SearchBar ref={searchRef} value={searchTerm} onChange={setSearchTerm} />
 
-        <CategoryFilter
-          categories={categories}
-          activeCategory={activeCategory}
-          onSelect={setActiveCategory}
-          showBookmarkedOnly={showBookmarkedOnly}
-          onToggleBookmarkedOnly={() => setShowBookmarkedOnly((v) => !v)}
-          bookmarkCount={bookmarks.length}
-        />
+            <CategoryFilter
+              categories={categories}
+              activeCategory={activeCategory}
+              onSelect={setActiveCategory}
+              showBookmarkedOnly={showBookmarkedOnly}
+              onToggleBookmarkedOnly={() => setShowBookmarkedOnly((v) => !v)}
+              bookmarkCount={bookmarks.length}
+            />
+
+            <section id="main-content" className="anr-articles" aria-label="Articles" tabIndex={-1}>
+              {filteredArticles.length === 0 ? (
+                <EmptyState onClear={clearFilters} />
+              ) : (
+                filteredArticles.map((article) => (
+                  <ArticleCard
+                    key={article.id}
+                    article={article}
+                    isSpeaking={speech.speakingId === article.id}
+                    isPaused={speech.speakingId === article.id && speech.isPaused}
+                    wordRange={speech.speakingId === article.id ? speech.wordRange : null}
+                    isSupported={speech.isSupported}
+                    isAnotherSpeaking={speech.speakingId !== null && speech.speakingId !== article.id}
+                    onToggleSpeak={handleToggleSpeak}
+                    onTogglePause={speech.togglePause}
+                    onSelectArticle={setFocusedArticleId}
+                  />
+                ))
+              )}
+            </section>
+          </>
+        )}
 
         {/* Announces reading state changes for screen reader users without
             visually shouting about it (visually-hidden via CSS). */}
@@ -124,26 +176,6 @@ function AppShell() {
               : "Reading article aloud"
             : ""}
         </p>
-
-        <section id="main-content" className="anr-articles" aria-label="Articles" tabIndex={-1}>
-          {filteredArticles.length === 0 ? (
-            <EmptyState onClear={clearFilters} />
-          ) : (
-            filteredArticles.map((article) => (
-              <ArticleCard
-                key={article.id}
-                article={article}
-                isSpeaking={speech.speakingId === article.id}
-                isPaused={speech.speakingId === article.id && speech.isPaused}
-                wordRange={speech.speakingId === article.id ? speech.wordRange : null}
-                isSupported={speech.isSupported}
-                isAnotherSpeaking={speech.speakingId !== null && speech.speakingId !== article.id}
-                onToggleSpeak={handleToggleSpeak}
-                onTogglePause={speech.togglePause}
-              />
-            ))
-          )}
-        </section>
       </main>
 
       <footer className="anr-footer">
@@ -162,9 +194,15 @@ function AppShell() {
 }
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
     <SettingsProvider>
-      <AppShell />
+      {showSplash ? (
+        <SplashScreen onFinish={() => setShowSplash(false)} />
+      ) : (
+        <AppShell />
+      )}
     </SettingsProvider>
   );
 }

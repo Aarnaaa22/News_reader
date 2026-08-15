@@ -620,3 +620,193 @@
   90% { opacity: 1; bottom: 20px; }
   100% { opacity: 0; bottom: 10px; }
 }
+
+/* ---------- SPLASH SCREEN ---------- */
+.anr-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+.anr-splash-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background: var(--surface);
+  z-index: 1;
+  transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.anr-splash-panel-left {
+  left: 0;
+  border-right: 1px solid var(--border);
+}
+
+.anr-splash-panel-right {
+  right: 0;
+  border-left: 1px solid var(--border);
+}
+
+/* Curtain effect sliding left and right panels apart */
+.anr-splash.is-exiting .anr-splash-panel-left {
+  transform: translateX(-100%);
+}
+
+.anr-splash.is-exiting .anr-splash-panel-right {
+  transform: translateX(100%);
+}
+
+.anr-splash-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 2.5rem 2rem;
+  max-width: 600px;
+  margin: 0 1.5rem;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.anr-splash.is-exiting .anr-splash-content {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.anr-splash-title {
+  font-size: 2.2em;
+  font-weight: 700;
+  margin: 0 0 0.5em 0;
+  color: var(--warm);
+  line-height: 1.25;
+}
+
+.anr-splash-subtitle {
+  font-size: 1.2em;
+  color: var(--text);
+  margin: 0 0 1.5em 0;
+  line-height: 1.5;
+}
+
+.anr-splash-skip-note {
+  display: inline-block;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+/* Reduced Motion overrides for curtain panels and text */
+.anr-app.anr-reduce-motion .anr-splash-panel,
+.anr-app.anr-reduce-motion .anr-splash-content {
+  transition: none !important;
+  transform: none !important;
+}
+
+/* ---------- CLICKABLE CARDS (GRID VIEW) ---------- */
+.anr-card.is-clickable {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.anr-card.is-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  border-color: var(--accent);
+}
+.anr-card.is-clickable:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---------- FOCUSED ARTICLE VIEW ---------- */
+.anr-focus-view {
+  animation: anr-zoom-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+@keyframes anr-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.93);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.anr-app.anr-reduce-motion .anr-focus-view {
+  animation: none !important;
+  transform: none !important;
+}
+
+.anr-focus-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0.75rem 1.75rem;
+  font-size: 1.15em;
+  font-weight: 700;
+  border-radius: var(--radius);
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  font-family: inherit;
+}
+
+.anr-focus-back-btn:hover {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.anr-app.anr-contrast .anr-focus-back-btn:hover {
+  color: #050505;
+}
+
+/* Extra large exit button in Easy Mode */
+.anr-app.anr-easy .anr-focus-back-btn,
+.anr-focus-back-btn.is-easy {
+  min-height: 64px;
+  padding: 1rem 2.2rem;
+  font-size: 1.35em;
+  border-width: 3px;
+}
+
+.anr-card-focused {
+  padding: calc(var(--pad-unit) * 1.75);
+  border-left-width: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.anr-card-focused .anr-card-title {
+  font-size: 1.75em;
+  line-height: 1.35;
+  margin-top: 0.3em;
+}
+
+.anr-card-focused .anr-card-content {
+  font-size: 1.15em;
+  line-height: 1.8;
+  margin: 1em 0;
+}
+
+
