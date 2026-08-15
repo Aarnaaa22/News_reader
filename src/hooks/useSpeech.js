@@ -153,5 +153,16 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     [isSupported, speakingId, rate, voiceURI, language, stop]
   );
 
-  return { isSupported, speakingId, isPaused, wordRange, voices, voiceError, speak, stop, togglePause };
+  return {
+    isSupported,
+    speakingId,
+    isPaused,
+    wordRange,
+    voices,
+    voiceError,
+    speak,
+    toggleSpeak: speak,
+    stop,
+    togglePause,
+  };
 }

@@ -74,7 +74,7 @@ function AppShell() {
   const handleToggleSpeak = useCallback(
     (article) => {
       const fullText = `${article.title}. By ${article.author}. ${article.content}`;
-      speech.toggleSpeak(article.id, fullText);
+      speech.speak(article.id, fullText);
     },
     [speech]
   );
