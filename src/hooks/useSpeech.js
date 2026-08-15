@@ -16,6 +16,7 @@ const BCP47_MAP = {
 export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' } = {}) {
   const isSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
+  // React state for UI rendering
   const [speakingId, setSpeakingId] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [wordRange, setWordRange] = useState(null);
@@ -23,26 +24,78 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
   const [voices, setVoices] = useState([]);
   const [voiceError] = useState(null);
 
-  const activeIdRef = useRef(null);
+  // Stable refs for values read inside effects without causing re-trigger loops
+  const speakingIdRef = useRef(speakingId);
   const activeTextRef = useRef(null);
   const rateRef = useRef(rate);
+  const prevRateRef = useRef(rate);
   const voiceURIRef = useRef(voiceURI);
   const languageRef = useRef(language);
   const isPausedRef = useRef(isPaused);
+
   const restartTimerRef = useRef(null);
   const cancelPollRef = useRef(null);
-
   const hasRealBoundaryRef = useRef(false);
   const fallbackCheckTimerRef = useRef(null);
   const estimateTimerRef = useRef(null);
+  const speakInternalRef = useRef(null);
 
-  // Keep refs updated with current settings
+  // Keep refs in sync with props & state
   useEffect(() => {
+    speakingIdRef.current = speakingId;
     rateRef.current = rate;
     voiceURIRef.current = voiceURI;
     languageRef.current = language;
     isPausedRef.current = isPaused;
-  }, [rate, voiceURI, language, isPaused]);
+  }, [speakingId, rate, voiceURI, language, isPaused]);
+
+  /* ==========================================================================
+     COSMETIC HIGHLIGHTING LOGIC (Pure visual state, zero audio interaction)
+     ========================================================================== */
+
+  // Clear all estimation & fallback timers
+  const clearHighlightTimers = useCallback(() => {
+    if (fallbackCheckTimerRef.current) {
+      clearTimeout(fallbackCheckTimerRef.current);
+      fallbackCheckTimerRef.current = null;
+    }
+    if (estimateTimerRef.current) {
+      clearTimeout(estimateTimerRef.current);
+      estimateTimerRef.current = null;
+    }
+  }, []);
+
+  // Start simulated estimated highlighting when native boundary events do not fire
+  const startEstimatedHighlighting = useCallback((text, currentRate) => {
+    clearHighlightTimers();
+
+    const tokens = splitWords(text);
+    if (tokens.length === 0) return;
+
+    let index = 0;
+
+    function highlightNext() {
+      if (index >= tokens.length || !speakingIdRef.current) {
+        return;
+      }
+
+      const token = tokens[index];
+      setWordRange({ start: token.start, end: token.end });
+
+      // Base ~65ms per character, scaled for speech rate
+      const baseDuration = Math.max(150, Math.min(800, token.word.length * 65));
+      const effectiveDuration = baseDuration / (currentRate || 1.0);
+
+      index++;
+      estimateTimerRef.current = setTimeout(highlightNext, effectiveDuration);
+    }
+
+    highlightNext();
+  }, [clearHighlightTimers]);
+
+  /* ==========================================================================
+     AUDIO CONTROL LOGIC (Interacts with window.speechSynthesis)
+     ========================================================================== */
 
   // Voice lists load asynchronously in most browsers
   useEffect(() => {
@@ -103,18 +156,6 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     return null;
   }, [isSupported, voices, language]);
 
-  // Clear all estimation & fallback timers
-  const clearHighlightTimers = useCallback(() => {
-    if (fallbackCheckTimerRef.current) {
-      clearTimeout(fallbackCheckTimerRef.current);
-      fallbackCheckTimerRef.current = null;
-    }
-    if (estimateTimerRef.current) {
-      clearTimeout(estimateTimerRef.current);
-      estimateTimerRef.current = null;
-    }
-  }, []);
-
   // Clean up pending timers and active speech on unmount
   useEffect(() => {
     return () => {
@@ -152,34 +193,6 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     }, interval);
   }, [isSupported]);
 
-  // Start simulated estimated highlighting when native boundary events do not fire
-  const startEstimatedHighlighting = useCallback((text, currentRate) => {
-    clearHighlightTimers();
-
-    const tokens = splitWords(text);
-    if (tokens.length === 0) return;
-
-    let index = 0;
-
-    function highlightNext() {
-      if (index >= tokens.length || !activeIdRef.current) {
-        return;
-      }
-
-      const token = tokens[index];
-      setWordRange({ start: token.start, end: token.end });
-
-      // Base ~65ms per character, scaled for speech rate
-      const baseDuration = Math.max(150, Math.min(800, token.word.length * 65));
-      const effectiveDuration = baseDuration / (currentRate || 1.0);
-
-      index++;
-      estimateTimerRef.current = setTimeout(highlightNext, effectiveDuration);
-    }
-
-    highlightNext();
-  }, [clearHighlightTimers]);
-
   // Full stop function
   const stop = useCallback(() => {
     clearHighlightTimers();
@@ -199,7 +212,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     setIsPaused(false);
     setWordRange(null);
     setIsEstimatedHighlight(false);
-    activeIdRef.current = null;
+    speakingIdRef.current = null;
     activeTextRef.current = null;
     hasRealBoundaryRef.current = false;
   }, [isSupported, clearHighlightTimers]);
@@ -214,7 +227,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     setIsPaused(false);
     setWordRange(null);
     setIsEstimatedHighlight(false);
-    activeIdRef.current = id;
+    speakingIdRef.current = id;
     activeTextRef.current = text;
     hasRealBoundaryRef.current = false;
 
@@ -250,9 +263,9 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
       utterance.voice = selectedVoice;
     }
 
-    // 400ms check: If no native boundary event fires within 400ms, enable estimated mode
+    // 400ms check: If no native boundary event fires within 400ms, enable estimated mode ONCE
     fallbackCheckTimerRef.current = setTimeout(() => {
-      if (!hasRealBoundaryRef.current && activeIdRef.current === id) {
+      if (!hasRealBoundaryRef.current && speakingIdRef.current === id) {
         setIsEstimatedHighlight(true);
         startEstimatedHighlighting(text, rateRef.current);
       }
@@ -277,7 +290,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
       setIsPaused(false);
       setWordRange(null);
       setIsEstimatedHighlight(false);
-      activeIdRef.current = null;
+      speakingIdRef.current = null;
       activeTextRef.current = null;
       hasRealBoundaryRef.current = false;
     };
@@ -289,7 +302,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
         setIsPaused(false);
         setWordRange(null);
         setIsEstimatedHighlight(false);
-        activeIdRef.current = null;
+        speakingIdRef.current = null;
         activeTextRef.current = null;
         hasRealBoundaryRef.current = false;
       }
@@ -298,6 +311,11 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
   }, [isSupported, clearHighlightTimers, startEstimatedHighlighting]);
+
+  // Save ref to speakInternal for rate restart effect
+  useEffect(() => {
+    speakInternalRef.current = speakInternal;
+  }, [speakInternal]);
 
   // Main speak function called when user taps Listen on an article
   const speak = useCallback((id, text) => {
@@ -309,7 +327,7 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     }
 
     // Clicking the article that's already speaking stops it instead of restarting
-    if (speakingId === id) {
+    if (speakingIdRef.current === id) {
       stop();
       return;
     }
@@ -317,30 +335,35 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
     cancelAndDrainQueue(() => {
       speakInternal(id, text);
     });
-  }, [isSupported, speakingId, stop, cancelAndDrainQueue, speakInternal]);
+  }, [isSupported, stop, cancelAndDrainQueue, speakInternal]);
 
-  // Debounced (300ms) restart when `rate` changes while an article is currently playing
+  // Rate-change restart effect: strictly watches ONLY user changes to `rate`
   useEffect(() => {
-    if (!isSupported) return;
+    // If rate value hasn't actually changed, return immediately without touching audio
+    if (prevRateRef.current === rate) {
+      return;
+    }
 
-    // Only restart speech if an article is actively playing
-    if (speakingId !== null && activeIdRef.current && activeTextRef.current && !isPausedRef.current) {
+    prevRateRef.current = rate;
+
+    // Only restart speech if an article is actively playing and not paused
+    if (isSupported && speakingIdRef.current !== null && activeTextRef.current && !isPausedRef.current) {
       if (restartTimerRef.current) {
         clearTimeout(restartTimerRef.current);
       }
 
       restartTimerRef.current = setTimeout(() => {
-        const currentId = activeIdRef.current;
+        const currentId = speakingIdRef.current;
         const currentText = activeTextRef.current;
 
-        if (currentId && currentText) {
+        if (currentId && currentText && speakInternalRef.current) {
           cancelAndDrainQueue(() => {
-            speakInternal(currentId, currentText);
+            speakInternalRef.current(currentId, currentText);
           });
         }
       }, 300);
     }
-  }, [rate, isSupported, speakingId, cancelAndDrainQueue, speakInternal]);
+  }, [rate, isSupported, cancelAndDrainQueue]);
 
   const togglePause = useCallback(() => {
     if (!speakingId || !isSupported) return;
