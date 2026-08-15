@@ -95,6 +95,66 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
       setIsPaused(false);
       setWordRange(null);
 
+      // Helper function to speak using browser Web Speech API as primary or fallback
+      const speakWithWebSpeech = () => {
+        if (!isSupported) {
+          setSpeakingId(null);
+          return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = rate;
+        utterance.lang = language;
+
+        let selectedVoice = null;
+        const allVoices = window.speechSynthesis.getVoices();
+
+        if (voiceURI) {
+          selectedVoice = allVoices.find((v) => v.voiceURI === voiceURI);
+        }
+
+        // Intelligently find best matching voice for selected language
+        if (!selectedVoice || !selectedVoice.lang.startsWith(language)) {
+          if (language === 'mr') {
+            selectedVoice = allVoices.find(v => v.lang.startsWith('mr')) || allVoices.find(v => v.lang.startsWith('hi'));
+          } else if (language === 'hi') {
+            selectedVoice = allVoices.find(v => v.lang.startsWith('hi'));
+          } else {
+            selectedVoice = allVoices.find(v => v.lang.startsWith('en'));
+          }
+          
+          if (!selectedVoice) {
+            selectedVoice = allVoices.find(v => v.lang.startsWith(language)) || allVoices[0];
+          }
+        }
+
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+        }
+
+        utterance.onboundary = (event) => {
+          if (event.name === "word" || event.charLength !== undefined) {
+            setWordRange({
+              start: event.charIndex,
+              end: event.charIndex + (event.charLength || 1),
+            });
+          }
+        };
+        utterance.onend = () => {
+          setSpeakingId(null);
+          setIsPaused(false);
+          setWordRange(null);
+        };
+        utterance.onerror = () => {
+          setSpeakingId(null);
+          setIsPaused(false);
+          setWordRange(null);
+        };
+
+        utteranceRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+      };
+
       // --- Use ElevenLabs Backend for Hindi & Marathi ---
       if (language === 'hi' || language === 'mr') {
         fetch("http://localhost:5000/tts", {
@@ -103,11 +163,10 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
           body: JSON.stringify({ text, language }),
         })
           .then((res) => {
-            if (!res.ok) throw new Error("Network response was not ok");
+            if (!res.ok) throw new Error("Backend response not ok");
             return res.blob();
           })
           .then((blob) => {
-            // Check if user clicked stop while fetching
             if (audioRef.current === false) return; 
             
             const url = URL.createObjectURL(blob);
@@ -120,8 +179,9 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
             audio.onerror = () => {
               setSpeakingId(null);
               setIsPaused(false);
-              setVoiceError("Failed to play audio from backend.");
+              setVoiceError("Backend audio playback error. Falling back to browser speech.");
               setTimeout(() => setVoiceError(null), 4000);
+              speakWithWebSpeech();
             };
 
             audioRef.current = audio;
@@ -129,82 +189,16 @@ export default function useSpeech({ rate = 1, voiceURI = null, language = 'en' }
           })
           .catch((err) => {
             console.error("TTS fetch error:", err);
-            setVoiceError("Could not connect to TTS backend.");
+            setVoiceError("TTS backend offline. Using browser voice fallback.");
             setTimeout(() => setVoiceError(null), 4000);
-            setSpeakingId(null);
+            speakWithWebSpeech();
           });
 
         return;
       }
-      
-      // --- Fallback to Web Speech API for other languages ---
-      if (!isSupported) {
-         setSpeakingId(null);
-         return;
-      }
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = rate;
-      utterance.lang = language;
-
-      let selectedVoice = null;
-      const allVoices = window.speechSynthesis.getVoices();
-
-      if (voiceURI) {
-        selectedVoice = allVoices.find((v) => v.voiceURI === voiceURI);
-      }
-
-      // If no voice is selected or the selected voice doesn't match the required language,
-      // intelligently find the best matching voice for the language.
-      if (!selectedVoice || !selectedVoice.lang.startsWith(language)) {
-        if (language === 'mr') {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('mr'));
-          if (!selectedVoice) {
-            setVoiceError("Marathi voice not supported on this device. Using default.");
-            setTimeout(() => setVoiceError(null), 4000);
-            selectedVoice = allVoices.find(v => v.lang.startsWith('hi'));
-          }
-        } else if (language === 'hi') {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('hi'));
-          if (!selectedVoice) {
-            setVoiceError("Hindi voice not supported on this device. Using default.");
-            setTimeout(() => setVoiceError(null), 4000);
-          }
-        } else {
-          selectedVoice = allVoices.find(v => v.lang.startsWith('en'));
-        }
-        
-        // Fallback to strict match or the first available system voice
-        if (!selectedVoice) {
-          selectedVoice = allVoices.find(v => v.lang.startsWith(language)) || allVoices[0];
-        }
-      }
-
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-
-      utterance.onboundary = (event) => {
-        if (event.name === "word" || event.charLength !== undefined) {
-          setWordRange({
-            start: event.charIndex,
-            end: event.charIndex + (event.charLength || 1),
-          });
-        }
-      };
-      utterance.onend = () => {
-        setSpeakingId(null);
-        setIsPaused(false);
-        setWordRange(null);
-      };
-      utterance.onerror = () => {
-        setSpeakingId(null);
-        setIsPaused(false);
-        setWordRange(null);
-      };
-
-      utteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
+      // --- Use Web Speech API for other languages ---
+      speakWithWebSpeech();
     },
     [isSupported, speakingId, rate, voiceURI, language, stop]
   );
